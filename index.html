@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Detector de Señas Inteligente</title>
+  <title>Traductor de Señas en Tiempo Real</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
   <style>
@@ -12,80 +12,103 @@
       flex-direction: column;
       align-items: center;
       margin: 0;
-      padding: 20px;
+      padding: 0;
       background: #f0f0f0;
       font-family: sans-serif;
+      min-height: 100vh;
+    }
+    .camera-container {
+      position: relative;
+      width: 100%;
+      max-width: 640px;
+      margin-top: 20px;
     }
     #video, #overlay {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%) scaleX(-1);
-      width: 640px;
-      height: 480px;
+      width: 100%;
+      height: auto;
+      transform: scaleX(-1);
     }
-    #video { z-index: 1; }
-    #overlay { 
-      z-index: 2;
+    #overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
       pointer-events: none;
     }
-    #message {
-      margin-top: 520px;
-      font-size: 1.5em;
-      color: #333;
-      text-align: center;
-      width: 640px;
-      white-space: pre-wrap;
-    }
     .controls {
-      margin: 10px;
+      width: 100%;
+      max-width: 640px;
       padding: 10px;
-      z-index: 3;
+      box-sizing: border-box;
     }
     input, button {
-      padding: 8px;
-      margin: 5px;
+      width: 100%;
+      padding: 12px;
+      margin: 5px 0;
       font-size: 1em;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:disabled {
+      background: #6c757d;
     }
     #progress {
-      width: 300px;
+      width: 100%;
       height: 20px;
       background: #ddd;
-      margin: 10px;
+      margin: 10px 0;
       display: none;
+      border-radius: 5px;
+      overflow: hidden;
     }
     #progress-bar {
       width: 0%;
       height: 100%;
-      background: #4CAF50;
+      background: #28a745;
       transition: width 0.3s;
     }
-    #detection-countdown {
-      position: absolute;
-      top: 50px;
-      left: 50%;
-      transform: translateX(-50%);
-      font-size: 2em;
-      color: red;
-      z-index: 4;
-      display: none;
+    #translations {
+      width: 100%;
+      max-width: 640px;
+      padding: 10px;
+      box-sizing: border-box;
+      font-size: 1.2em;
+      min-height: 100px;
+      background: white;
+      border-radius: 5px;
+      margin: 10px;
+    }
+    @media (max-width: 640px) {
+      #video, #overlay {
+        height: 60vh;
+        object-fit: cover;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>Detector de Señas Inteligente</h1>
+  <h1>Traductor de Señas</h1>
+  <div class="camera-container">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+  
   <div class="controls">
     <input type="text" id="gestureName" placeholder="Nombre del gesto">
-    <button onclick="startTraining()">Agregar Gesto</button>
+    <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
     <button onclick="toggleDetection()" id="detectBtn">Iniciar Detección</button>
+    <button onclick="clearTranslations()" id="clearBtn">Limpiar Traducciones</button>
+    <div id="progress">
+      <div id="progress-bar"></div>
+    </div>
   </div>
-  <div id="progress">
-    <div id="progress-bar"></div>
-  </div>
-  <div id="detection-countdown"></div>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="overlay"></canvas>
-  <div id="message"></div>
+  
+  <div id="translations"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
@@ -96,27 +119,21 @@
     let isTraining = false;
     let isDetecting = false;
     let currentGesture = null;
-    const detectedGestures = [];
     let trainingStartTime = 0;
-    let progressInterval;
-    let lastDetectionTime = 0;
-    let detectionCoolDown = 3000;
-    let currentDetection = null;
-    let detectionConfidence = 0;
-    let isCoolingDown = false;
+    let lastDetection = '';
     
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('overlay');
-    const messageEl = document.getElementById('message');
+    const translationsEl = document.getElementById('translations');
     const progressBar = document.getElementById('progress-bar');
     const progressContainer = document.getElementById('progress');
-    const detectBtn = document.getElementById('detectBtn');
-    const countdownEl = document.getElementById('detection-countdown');
 
-    canvasElement.width = 640;
-    canvasElement.height = 480;
+    // Configurar canvas
+    canvasElement.width = videoElement.offsetWidth;
+    canvasElement.height = videoElement.offsetHeight;
     const ctx = canvasElement.getContext('2d');
 
+    // Configurar MediaPipe Hands
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
@@ -145,16 +162,15 @@
       }
     });
 
+    // Iniciar cámara
     const camera = new Camera(videoElement, {
       onFrame: async () => await hands.send({ image: videoElement }),
-      width: 640,
-      height: 480
+      width: canvasElement.width,
+      height: canvasElement.height
     });
     camera.start();
 
     async function processGesture(landmarks) {
-      if (!isTraining && !isDetecting) return;
-      
       const features = getNormalizedFeatures(landmarks);
       
       if (isTraining) {
@@ -167,23 +183,10 @@
         }
       }
       
-      if (isDetecting && !isCoolingDown) {
+      if (isDetecting) {
         const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
-        
         if (result.confidences[result.label] > 0.9) {
-          if (result.label === currentDetection) {
-            detectionConfidence++;
-          } else {
-            currentDetection = result.label;
-            detectionConfidence = 1;
-          }
-
-          if (detectionConfidence >= 5) {
-            handleConfirmedDetection(result.label);
-          }
-        } else {
-          detectionConfidence = 0;
-          currentDetection = null;
+          handleDetection(result.label);
         }
       }
     }
@@ -209,16 +212,13 @@
 
     async function startTraining() {
       currentGesture = document.getElementById('gestureName').value.trim();
-      if (!currentGesture) return alert('Ingresa un nombre para el gesto');
+      if (!currentGesture) return alert('Ingrese nombre del gesto');
       
-      const btn = document.querySelector('button[onclick="startTraining()"]');
+      const btn = document.getElementById('trainBtn');
       btn.disabled = true;
-      detectBtn.disabled = true;
       document.getElementById('gestureName').value = '';
       
-      messageEl.textContent = "Preparate: El entrenamiento comenzará en 3...";
-      await countdown(3);
-      
+      // Cuenta regresiva de entrenamiento
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
       isTraining = true;
@@ -228,69 +228,31 @@
         isTraining = false;
         progressContainer.style.display = 'none';
         btn.disabled = false;
-        detectBtn.disabled = false;
-        messageEl.textContent = `${currentGesture} entrenado exitosamente!`;
+        translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado!</div>`;
         saveModel();
       }, 3000);
     }
 
-    async function countdown(seconds) {
-      return new Promise(resolve => {
-        let count = seconds;
-        const interval = setInterval(() => {
-          messageEl.textContent = `Preparate: El entrenamiento comenzará en ${count}...`;
-          count--;
-          if (count < 0) {
-            clearInterval(interval);
-            resolve();
-          }
-        }, 1000);
-      });
+    function handleDetection(gesture) {
+      if (gesture !== lastDetection) {
+        translationsEl.innerHTML += `<div>${gesture}</div>`;
+        lastDetection = gesture;
+        translationsEl.scrollTop = translationsEl.scrollHeight;
+      }
     }
 
     function toggleDetection() {
       isDetecting = !isDetecting;
-      messageEl.textContent = isDetecting ? 
-        'Modo detección activo - realiza un gesto' : 'Modo detección desactivado';
-      detectBtn.textContent = isDetecting ? 'Detener Detección' : 'Iniciar Detección';
-      detectedGestures.length = 0;
-      updateMessage();
+      document.getElementById('detectBtn').textContent = 
+        isDetecting ? 'Detener Detección' : 'Iniciar Detección';
     }
 
-    function handleConfirmedDetection(gesture) {
-      if (Date.now() - lastDetectionTime < detectionCoolDown) return;
-      
-      isCoolingDown = true;
-      lastDetectionTime = Date.now();
-      detectedGestures.push(gesture);
-      updateMessage();
-      startDetectionCooldown();
+    function clearTranslations() {
+      translationsEl.innerHTML = '';
+      lastDetection = '';
     }
 
-    function startDetectionCooldown() {
-      let remaining = 3;
-      countdownEl.style.display = 'block';
-      
-      const interval = setInterval(() => {
-        countdownEl.textContent = `Próxima detección en: ${remaining}`;
-        remaining--;
-        
-        if (remaining < 0) {
-          clearInterval(interval);
-          countdownEl.style.display = 'none';
-          isCoolingDown = false;
-          currentDetection = null;
-          detectionConfidence = 0;
-        }
-      }, 1000);
-    }
-
-    function updateMessage() {
-      messageEl.textContent = detectedGestures.length > 0 
-        ? `Seña detectada: ${detectedGestures[detectedGestures.length - 1]}`
-        : 'Ninguna seña detectada';
-    }
-
+    // Persistencia del modelo
     async function saveModel() {
       const dataset = classifier.getClassifierDataset();
       const datasetObj = {};
