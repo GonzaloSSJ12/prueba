@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Detector de Señas con Entrenamiento</title>
+  <title>Detector de Señas con Entrenamiento Mejorado</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
   <style>
@@ -47,14 +47,30 @@
       margin: 5px;
       font-size: 1em;
     }
+    #progress {
+      width: 300px;
+      height: 20px;
+      background: #ddd;
+      margin: 10px;
+      display: none;
+    }
+    #progress-bar {
+      width: 0%;
+      height: 100%;
+      background: #4CAF50;
+      transition: width 0.3s;
+    }
   </style>
 </head>
 <body>
-  <h1>Detector de Señas Entrenables</h1>
+  <h1>Detector de Señas Inteligente</h1>
   <div class="controls">
     <input type="text" id="gestureName" placeholder="Nombre del gesto">
     <button onclick="startTraining()">Agregar Gesto</button>
-    <button onclick="toggleDetection()">Iniciar Detección</button>
+    <button onclick="toggleDetection()" id="detectBtn">Iniciar Detección</button>
+  </div>
+  <div id="progress">
+    <div id="progress-bar"></div>
   </div>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="overlay"></canvas>
@@ -69,15 +85,20 @@
     let isTraining = false;
     let isDetecting = false;
     let currentGesture = null;
-    let trainingSamples = 0;
     const detectedGestures = [];
+    let trainingStartTime = 0;
+    let progressInterval;
     
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('overlay');
+    const messageEl = document.getElementById('message');
+    const progressBar = document.getElementById('progress-bar');
+    const progressContainer = document.getElementById('progress');
+    const detectBtn = document.getElementById('detectBtn');
+
     canvasElement.width = 640;
     canvasElement.height = 480;
     const ctx = canvasElement.getContext('2d');
-    const messageEl = document.getElementById('message');
 
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -86,8 +107,8 @@
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.5
+      minDetectionConfidence: 0.8,
+      minTrackingConfidence: 0.7
     });
 
     hands.onResults(results => {
@@ -118,20 +139,18 @@
       const features = getNormalizedFeatures(landmarks);
       
       if (isTraining) {
-        classifier.addExample(tf.tensor2d(features, [1, 63]), currentGesture);
-        trainingSamples++;
-        messageEl.textContent = `Entrenando: ${currentGesture} (${trainingSamples}/3)`;
+        const elapsed = Date.now() - trainingStartTime;
+        const progress = Math.min(elapsed / 3000 * 100, 100);
+        progressBar.style.width = `${progress}%`;
         
-        if (trainingSamples >= 3) {
-          isTraining = false;
-          messageEl.textContent = `${currentGesture} entrenado!`;
-          trainingSamples = 0;
+        if (elapsed <= 3000) {
+          classifier.addExample(tf.tensor2d(features, [1, 63]), currentGesture);
         }
       }
       
       if (isDetecting) {
         const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
-        if (result.confidences[result.label] > 0.7) {
+        if (result.confidences[result.label] > 0.85) {
           detectedGestures.push(result.label);
           updateMessage();
         }
@@ -139,39 +158,84 @@
     }
 
     function getNormalizedFeatures(landmarks) {
-      const minMax = landmarks.reduce((acc, l) => ({
-        minX: Math.min(acc.minX, l.x),
-        maxX: Math.max(acc.maxX, l.x),
-        minY: Math.min(acc.minY, l.y),
-        maxY: Math.max(acc.maxY, l.y)
-      }), {minX: 1, maxX: 0, minY: 1, maxY: 0});
-
-      return landmarks.flatMap(l => [
-        (l.x - minMax.minX) / (minMax.maxX - minMax.minX),
-        (l.y - minMax.minY) / (minMax.maxY - minMax.minY),
-        l.z
+      // Calcular punto de referencia relativo (muñeca)
+      const wrist = landmarks[0];
+      const relativeLandmarks = landmarks.map(l => ({
+        x: l.x - wrist.x,
+        y: l.y - wrist.y,
+        z: l.z - wrist.z
+      }));
+      
+      // Encontrar valores máximos para normalización
+      const maxVal = Math.max(
+        ...relativeLandmarks.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)])
+      );
+      
+      // Normalizar a [-1, 1]
+      return relativeLandmarks.flatMap(l => [
+        l.x / maxVal,
+        l.y / maxVal,
+        l.z / maxVal
       ]);
     }
 
-    function startTraining() {
+    async function startTraining() {
       currentGesture = document.getElementById('gestureName').value.trim();
       if (!currentGesture) return alert('Ingresa un nombre para el gesto');
       
-      isTraining = true;
+      const btn = document.querySelector('button[onclick="startTraining()"]');
+      btn.disabled = true;
+      detectBtn.disabled = true;
       document.getElementById('gestureName').value = '';
+      
+      // Cuenta regresiva de 3 segundos
+      messageEl.textContent = "Preparate: El entrenamiento comenzará en 3...";
+      await countdown(3);
+      
+      // Entrenamiento de 3 segundos
+      progressContainer.style.display = 'block';
+      progressBar.style.width = '0%';
+      isTraining = true;
+      trainingStartTime = Date.now();
+      
+      setTimeout(() => {
+        isTraining = false;
+        progressContainer.style.display = 'none';
+        btn.disabled = false;
+        detectBtn.disabled = false;
+        messageEl.textContent = `${currentGesture} entrenado exitosamente!`;
+        saveModel();
+      }, 3000);
+    }
+
+    async function countdown(seconds) {
+      return new Promise(resolve => {
+        let count = seconds;
+        const interval = setInterval(() => {
+          messageEl.textContent = `Preparate: El entrenamiento comenzará en ${count}...`;
+          count--;
+          if (count < 0) {
+            clearInterval(interval);
+            resolve();
+          }
+        }, 1000);
+      });
     }
 
     function toggleDetection() {
       isDetecting = !isDetecting;
       messageEl.textContent = isDetecting ? 
-        'Modo detección activo' : 'Modo detección desactivado';
+        'Modo detección activo - realiza un gesto' : 'Modo detección desactivado';
+      detectBtn.textContent = isDetecting ? 'Detener Detección' : 'Iniciar Detección';
+      detectedGestures.length = 0;
+      updateMessage();
     }
 
     function updateMessage() {
-      messageEl.textContent = detectedGestures.join(' → ');
+      messageEl.textContent = detectedGestures.slice(-5).join(' → ');
     }
 
-    // Guardar y cargar modelo (opcional)
+    // Persistencia del modelo
     async function saveModel() {
       const dataset = classifier.getClassifierDataset();
       const datasetObj = {};
@@ -192,7 +256,6 @@
       }
     }
     
-    // Cargar modelo al iniciar
     loadModel();
   </script>
 </body>
