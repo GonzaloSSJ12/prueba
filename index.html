@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Traductor de Señas con Detección Facial</title>
+  <title>Traductor de Señas en Tiempo Real</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
   <style>
@@ -83,15 +83,16 @@
       border-radius: 5px;
       margin: 10px;
     }
-    .face-box {
-      position: absolute;
-      border: 2px solid #ff0000;
-      background: rgba(255, 0, 0, 0.1);
+    @media (max-width: 640px) {
+      #video, #overlay {
+        height: 60vh;
+        object-fit: cover;
+      }
     }
   </style>
 </head>
 <body>
-  <h1>Traductor de Señas + Detección Facial</h1>
+  <h1>Traductor de Señas</h1>
   <div class="camera-container">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
@@ -110,7 +111,6 @@
   <div id="translations"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
@@ -133,16 +133,11 @@
     canvasElement.height = videoElement.offsetHeight;
     const ctx = canvasElement.getContext('2d');
 
-    // Configurar detectores
+    // Configurar MediaPipe Hands
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
     
-    const faceDetection = new FaceDetection({
-      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`
-    });
-
-    // Configurar opciones
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
@@ -150,65 +145,32 @@
       minTrackingConfidence: 0.7
     });
 
-    faceDetection.setOptions({
-      model: 'short',
-      minDetectionConfidence: 0.5
-    });
-
-    // Función combinada de dibujo
-    function drawCombinedResults(handsResults, faceResults) {
+    hands.onResults(results => {
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-      // Dibujar manos
-      if (handsResults.multiHandLandmarks) {
-        handsResults.multiHandLandmarks.forEach(landmarks => {
+      if (results.multiHandLandmarks) {
+        results.multiHandLandmarks.forEach(landmarks => {
           window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
             {color: '#00FF00', lineWidth: 2});
           window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
         });
-      }
 
-      // Dibujar rostros
-      if (faceResults.detections) {
-        faceResults.detections.forEach(detection => {
-          const bb = detection.boundingBox;
-          ctx.beginPath();
-          ctx.rect(
-            bb.xCenter * canvasElement.width - bb.width * canvasElement.width / 2,
-            bb.yCenter * canvasElement.height - bb.height * canvasElement.height / 2,
-            bb.width * canvasElement.width,
-            bb.height * canvasElement.height
-          );
-          ctx.strokeStyle = '#FF0000';
-          ctx.lineWidth = 2;
-          ctx.stroke();
-        });
+        if (isTraining || isDetecting) {
+          processGesture(results.multiHandLandmarks[0]);
+        }
       }
-    }
+    });
 
-    // Configurar cámaras
+    // Iniciar cámara
     const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await Promise.all([
-          hands.send({ image: videoElement }),
-          faceDetection.send({ image: videoElement })
-        ]);
-      },
+      onFrame: async () => await hands.send({ image: videoElement }),
       width: canvasElement.width,
       height: canvasElement.height
     });
-
-    hands.onResults(results => {
-      faceDetection.send({ image: videoElement }).then(faceResults => {
-        drawCombinedResults(results, faceResults);
-        if (isTraining || isDetecting) processGesture(results.multiHandLandmarks[0]);
-      });
-    });
+    camera.start();
 
     async function processGesture(landmarks) {
-      if (!landmarks) return;
-      
       const features = getNormalizedFeatures(landmarks);
       
       if (isTraining) {
@@ -256,6 +218,7 @@
       btn.disabled = true;
       document.getElementById('gestureName').value = '';
       
+      // Cuenta regresiva de entrenamiento
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
       isTraining = true;
@@ -272,7 +235,7 @@
 
     function handleDetection(gesture) {
       if (gesture !== lastDetection) {
-        translationsEl.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${gesture}</div>`;
+        translationsEl.innerHTML += `<div>${gesture}</div>`;
         lastDetection = gesture;
         translationsEl.scrollTop = translationsEl.scrollHeight;
       }
@@ -289,6 +252,7 @@
       lastDetection = '';
     }
 
+    // Persistencia del modelo
     async function saveModel() {
       const dataset = classifier.getClassifierDataset();
       const datasetObj = {};
@@ -309,7 +273,6 @@
       }
     }
     
-    camera.start();
     loadModel();
   </script>
 </body>
