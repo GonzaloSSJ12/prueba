@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Detector y Seguimiento de Dos Manos con Gestos</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+      background: #f0f0f0;
+      font-family: sans-serif;
+    }
+    #video, #overlay {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) scaleX(-1); /* espejo fijo */
+      width: 640px;
+      height: 480px;
+    }
+    #video { z-index: 1; }
+    #overlay { 
+      z-index: 2;
+      pointer-events: none;
+    }
+    #message {
+      margin-top: 520px;
+      font-size: 1.5em;
+      color: #333;
+      text-align: center;
+      width: 640px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Detector y Seguimiento de Dos Manos con Gestos</h1>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div id="message"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+
+  <script>
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('overlay');
+    canvasElement.width = 640;
+    canvasElement.height = 480;
+    const ctx = canvasElement.getContext('2d');
+    const messageEl = document.getElementById('message');
+
+    // Para acumular gestos confirmados
+    const detected = [];
+    let lastGesture = null;
+    let lastTime = 0;
+    const confirmDelay = 500; // ms
+
+    // Inicializar MediaPipe Hands para 2 manos
+    const hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 2,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    // Helpers de dibujo
+    const { drawConnectors, drawLandmarks, HAND_CONNECTIONS } = window;
+
+    // Iniciar cámara
+    const camera = new Camera(videoElement, {
+      onFrame: async () => await hands.send({ image: videoElement }),
+      width: 640,
+      height: 480
+    });
+    camera.start();
+
+    function onResults(results) {
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      // Dibujar video directamente, CSS ya invierte imagen
+      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        // Dibujar landmarks y conexiones (canvas invertido por CSS)
+        results.multiHandLandmarks.forEach(landmarks => {
+          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
+          drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1, radius: 4 });
+        });
+
+        // Reconocer gesto en la primera mano
+        const g = recognizeGesture(results.multiHandLandmarks[0]);
+        const now = performance.now();
+
+        if (g && g === lastGesture && now - lastTime > confirmDelay) {
+          if (detected[detected.length - 1] !== g) detected.push(g);
+          updateMessage();
+          lastTime = now;
+        } else if (g && g !== lastGesture) {
+          lastGesture = g;
+          lastTime = now;
+        }
+      }
+    }
+
+    function recognizeGesture(l) {
+      const f = countFingers(l);
+      if (f >= 4) return 'Hola';
+      if (f === 0) return 'Puño';
+      if (isThumbsUp(l)) return 'Pulgar arriba';
+      if (isILoveYou(l)) return 'Te amo';
+      return null;
+    }
+
+    function countFingers(l) {
+      let c = 0;
+      [8, 12, 16, 20].forEach(i => { if (l[i].y < l[i - 2].y) c++; });
+      const right = l[17].x < l[5].x;
+      if (right ? l[4].x < l[3].x : l[4].x > l[3].x) c++;
+      return c;
+    }
+
+    function isThumbsUp(l) {
+      const thumbUp = l[4].y < l[3].y;
+      const others = [8, 12, 16, 20].every(i => l[i].y > l[i - 2].y);
+      return thumbUp && others;
+    }
+
+    function isILoveYou(l) {
+      return (
+        l[4].y < l[3].y &&
+        l[8].y < l[6].y &&
+        l[20].y < l[18].y &&
+        l[12].y > l[10].y &&
+        l[16].y > l[14].y
+      );
+    }
+
+    function updateMessage() {
+      messageEl.textContent = detected.join(' · ');
+    }
+  </script>
+</body>
+</html>
