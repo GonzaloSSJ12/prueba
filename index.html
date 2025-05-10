@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Detector de Señas con Entrenamiento Mejorado</title>
+  <title>Detector de Señas Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
   <style>
@@ -82,6 +82,7 @@
   <div id="progress">
     <div id="progress-bar"></div>
   </div>
+  <div id="detection-countdown"></div>
   <video id="video" autoplay muted playsinline></video>
   <canvas id="overlay"></canvas>
   <div id="message"></div>
@@ -98,6 +99,11 @@
     const detectedGestures = [];
     let trainingStartTime = 0;
     let progressInterval;
+    let lastDetectionTime = 0;
+    let detectionCoolDown = 3000;
+    let currentDetection = null;
+    let detectionConfidence = 0;
+    let isCoolingDown = false;
     
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('overlay');
@@ -105,6 +111,7 @@
     const progressBar = document.getElementById('progress-bar');
     const progressContainer = document.getElementById('progress');
     const detectBtn = document.getElementById('detectBtn');
+    const countdownEl = document.getElementById('detection-countdown');
 
     canvasElement.width = 640;
     canvasElement.height = 480;
@@ -113,79 +120,7 @@
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-     <div id="detection-countdown"></div>
-
-  <script>
-    // Variables de estado modificadas
-    let lastDetectionTime = 0;
-    let detectionCoolDown = 3000; // 3 segundos
-    let currentDetection = null;
-    let detectionConfidence = 0;
-    let detectionCountdown = 0;
-    let isCoolingDown = false;
-
-    async function processGesture(landmarks) {
-      if (!isTraining && !isDetecting) return;
-      
-      const features = getNormalizedFeatures(landmarks);
-      
-      if (isTraining) {
-        // ... (mantener misma lógica de entrenamiento) ...
-      }
-      
-      if (isDetecting && !isCoolingDown) {
-        const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
-        
-        if (result.confidences[result.label] > 0.9) {
-          if (result.label === currentDetection) {
-            detectionConfidence++;
-          } else {
-            currentDetection = result.label;
-            detectionConfidence = 1;
-          }
-
-          // Confirmar detección después de 500ms de consistencia
-          if (detectionConfidence >= 5) {
-            handleConfirmedDetection(result.label);
-          }
-        }
-      }
-    }
-
-    function handleConfirmedDetection(gesture) {
-      if (Date.now() - lastDetectionTime < detectionCoolDown) return;
-      
-      isCoolingDown = true;
-      lastDetectionTime = Date.now();
-      detectedGestures.push(gesture);
-      updateMessage();
-      startDetectionCooldown();
-    }
-
-    function startDetectionCooldown() {
-      const countdownEl = document.getElementById('detection-countdown');
-      let remaining = 3;
-      
-      countdownEl.style.display = 'block';
-      
-      const interval = setInterval(() => {
-        countdownEl.textContent = `Próxima detección en: ${remaining}`;
-        remaining--;
-        
-        if (remaining < 0) {
-          clearInterval(interval);
-          countdownEl.style.display = 'none';
-          isCoolingDown = false;
-          currentDetection = null;
-          detectionConfidence = 0;
-        }
-      }, 1000);
-    }
-
-    function updateMessage() {
-      // Mostrar solo la última detección confirmada
-      messageEl.textContent = `Seña detectada: ${detectedGestures[detectedGestures.length - 1] || 'Ninguna'}`;
-    }
+    
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
@@ -218,6 +153,8 @@
     camera.start();
 
     async function processGesture(landmarks) {
+      if (!isTraining && !isDetecting) return;
+      
       const features = getNormalizedFeatures(landmarks);
       
       if (isTraining) {
@@ -230,17 +167,28 @@
         }
       }
       
-      if (isDetecting) {
+      if (isDetecting && !isCoolingDown) {
         const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
-        if (result.confidences[result.label] > 0.85) {
-          detectedGestures.push(result.label);
-          updateMessage();
+        
+        if (result.confidences[result.label] > 0.9) {
+          if (result.label === currentDetection) {
+            detectionConfidence++;
+          } else {
+            currentDetection = result.label;
+            detectionConfidence = 1;
+          }
+
+          if (detectionConfidence >= 5) {
+            handleConfirmedDetection(result.label);
+          }
+        } else {
+          detectionConfidence = 0;
+          currentDetection = null;
         }
       }
     }
 
     function getNormalizedFeatures(landmarks) {
-      // Calcular punto de referencia relativo (muñeca)
       const wrist = landmarks[0];
       const relativeLandmarks = landmarks.map(l => ({
         x: l.x - wrist.x,
@@ -248,12 +196,10 @@
         z: l.z - wrist.z
       }));
       
-      // Encontrar valores máximos para normalización
       const maxVal = Math.max(
         ...relativeLandmarks.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)])
       );
       
-      // Normalizar a [-1, 1]
       return relativeLandmarks.flatMap(l => [
         l.x / maxVal,
         l.y / maxVal,
@@ -270,11 +216,9 @@
       detectBtn.disabled = true;
       document.getElementById('gestureName').value = '';
       
-      // Cuenta regresiva de 3 segundos
       messageEl.textContent = "Preparate: El entrenamiento comenzará en 3...";
       await countdown(3);
       
-      // Entrenamiento de 3 segundos
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
       isTraining = true;
@@ -313,11 +257,40 @@
       updateMessage();
     }
 
-    function updateMessage() {
-      messageEl.textContent = detectedGestures.slice(-5).join(' → ');
+    function handleConfirmedDetection(gesture) {
+      if (Date.now() - lastDetectionTime < detectionCoolDown) return;
+      
+      isCoolingDown = true;
+      lastDetectionTime = Date.now();
+      detectedGestures.push(gesture);
+      updateMessage();
+      startDetectionCooldown();
     }
 
-    // Persistencia del modelo
+    function startDetectionCooldown() {
+      let remaining = 3;
+      countdownEl.style.display = 'block';
+      
+      const interval = setInterval(() => {
+        countdownEl.textContent = `Próxima detección en: ${remaining}`;
+        remaining--;
+        
+        if (remaining < 0) {
+          clearInterval(interval);
+          countdownEl.style.display = 'none';
+          isCoolingDown = false;
+          currentDetection = null;
+          detectionConfidence = 0;
+        }
+      }, 1000);
+    }
+
+    function updateMessage() {
+      messageEl.textContent = detectedGestures.length > 0 
+        ? `Seña detectada: ${detectedGestures[detectedGestures.length - 1]}`
+        : 'Ninguna seña detectada';
+    }
+
     async function saveModel() {
       const dataset = classifier.getClassifierDataset();
       const datasetObj = {};
