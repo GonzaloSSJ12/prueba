@@ -1,182 +1,142 @@
 <!DOCTYPE html>
-<html lang="es">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Detector y Seguimiento de Dos Manos con Gestos</title>
-  <style>
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      margin: 0;
-      padding: 20px;
-      background: #f0f0f0;
-      font-family: sans-serif;
-    }
-    #video, #overlay {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%) scaleX(-1); /* espejo fijo */
-      width: 640px;
-      height: 480px;
-    }
-    #video { z-index: 1; }
-    #overlay { 
-      z-index: 2;
-      pointer-events: none;
-    }
-    #message {
-      margin-top: 520px;
-      font-size: 1.5em;
-      color: #333;
-      text-align: center;
-      width: 640px;
-      white-space: pre-wrap;
-    }
-  </style>
+    <title>Detección de Señas con IA</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.0"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
+    <style>
+        #video-container { position: relative; }
+        #video { transform: scaleX(-1); }
+        #canvas { position: absolute; top: 0; left: 0; }
+        .controls { margin: 20px 0; }
+        input, button { margin: 5px; padding: 8px; }
+    </style>
 </head>
 <body>
-  <h1>Detector y Seguimiento de Dos Manos con Gestos</h1>
-  <video id="video" autoplay muted playsinline></video>
-  <canvas id="overlay"></canvas>
-  <div id="message"></div>
+    <div class="controls">
+        <input type="text" id="gestureName" placeholder="Nombre de la seña">
+        <button onclick="startTraining()">Agregar Seña</button>
+        <button onclick="startDetection()">Comenzar Detección</button>
+    </div>
+    <div id="video-container">
+        <video id="video" width="640" height="480" autoplay></video>
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+    <div id="status">Estado: Sin entrenar</div>
+    <div id="result"></div>
 
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script>
+let detector;
+let video;
+let canvas;
+let ctx;
+let classifier = knnClassifier.create();
+let trainingData = {};
+let currentGesture = null;
+let trainingSamples = 0;
+let isTraining = false;
+let isDetecting = false;
 
-  <script>
-    const videoElement = document.getElementById('video');
-    const canvasElement = document.getElementById('overlay');
-    canvasElement.width = 640;
-    canvasElement.height = 480;
-    const ctx = canvasElement.getContext('2d');
-    const messageEl = document.getElementById('message');
-
-    // --- VARIABLES GLOBALES ---
-    const FRAME_BUFFER = [];
-    const BUFFER_SIZE = 8;       // número de frames a considerar
-    const CONFIRM_THRESHOLD = 5; // cuántos frames deben coincidir
-    let lastConfirmed = null;
+async function setupCamera() {
+    video = document.getElementById('video');
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
     
-    // Para acumular gestos confirmados
-    const detected = [];
-
-    // Inicializar MediaPipe Hands para 2 manos
-    const hands = new Hands({
-      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    return new Promise((resolve) => {
+        video.onloadedmetadata = () => {
+            resolve(video);
+        };
     });
-    hands.setOptions({
-      maxNumHands: 2,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.7,
-      minTrackingConfidence: 0.5
-    });
-    hands.onResults(onResults);
+}
 
-    // Helpers de dibujo
-    const { drawConnectors, drawLandmarks, HAND_CONNECTIONS } = window;
+async function initializeHandDetection() {
+    detector = await handPoseDetection.createDetector(
+        handPoseDetection.SupportedModels.MediaPipeHands,
+        {
+            runtime: 'mediapipe',
+            modelType: 'full',
+            solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'
+        }
+    );
+}
 
-    // Iniciar cámara
-    const camera = new Camera(videoElement, {
-      onFrame: async () => await hands.send({ image: videoElement }),
-      width: 640,
-      height: 480
-    });
-    camera.start();
-
-    function onResults(results) {
-      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
-      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        // Dibujar landmarks y conexiones
-        results.multiHandLandmarks.forEach(landmarks => {
-          drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
-          drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1, radius: 4 });
+function drawHands(hands) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hands.forEach(hand => {
+        hand.keypoints.forEach(point => {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+            ctx.fillStyle = 'red';
+            ctx.fill();
         });
+    });
+}
 
-        const landmarks = results.multiHandLandmarks[0];
-        // 1️⃣ Detectar candidato este frame:
-        const candidate = recognizeGesture(landmarks) || 'none';
+async function getHandEmbedding(hand) {
+    const keypoints = hand.keypoints.map(point => [point.x, point.y, point.z]);
+    return tf.tensor2d(keypoints.flat(), [1, 63]);
+}
 
-        // 2️⃣ Meterlo en buffer:
-        FRAME_BUFFER.push({ gesture: candidate, lm: landmarks });
-        if (FRAME_BUFFER.length > BUFFER_SIZE) FRAME_BUFFER.shift();
-
-        // 3️⃣ Contar ocurrencias en buffer:
-        const counts = FRAME_BUFFER.reduce((acc, f) => {
-          acc[f.gesture] = (acc[f.gesture] || 0) + 1;
-          return acc;
-        }, {});
-
-        // 4️⃣ Encontrar el gesto más frecuente:
-        let [bestGesture, bestCount] = Object.entries(counts)
-          .reduce(([g0, c0], [g1, c1]) => c1 > c0 ? [g1, c1] : [g0, c0], ['none', 0]);
-
-        // 5️⃣ Si pasa umbral y es nuevo, confirmar:
-        if (bestGesture !== 'none' && bestCount >= CONFIRM_THRESHOLD && bestGesture !== lastConfirmed) {
-          detected.push(bestGesture);
-          lastConfirmed = bestGesture;
-          updateMessage();
+async function processFrame() {
+    if (!isTraining && !isDetecting) return;
+    
+    const hands = await detector.estimateHands(video);
+    drawHands(hands);
+    
+    if (hands.length > 0) {
+        const embedding = await getHandEmbedding(hands[0]);
+        
+        if (isTraining) {
+            classifier.addExample(embedding, currentGesture);
+            trainingSamples++;
+            document.getElementById('status').innerText = 
+                `Entrenando: ${currentGesture} (${trainingSamples}/3)`;
+            
+            if (trainingSamples >= 3) {
+                isTraining = false;
+                trainingSamples = 0;
+                document.getElementById('status').innerText = 
+                    `Seña ${currentGesture} entrenada!`;
+            }
         }
-
-        // 6️⃣ Para gestos dinámicos (ej: adiós):
-        if (bestGesture === 'adios') {
-          const movement = detectMovement(FRAME_BUFFER);
-          if (movement > 0.1 && bestGesture !== lastConfirmed) {
-            detected.push(bestGesture);
-            lastConfirmed = bestGesture;
-            updateMessage();
-          }
+        
+        if (isDetecting) {
+            const result = await classifier.predictClass(embedding);
+            document.getElementById('result').innerText = 
+                `Seña detectada: ${result.label}`;
         }
-      }
     }
+    
+    requestAnimationFrame(processFrame);
+}
 
-    function recognizeGesture(l) {
-      const f = countFingers(l);
-      if (f >= 4) return 'Hola';
-      if (f === 0) return 'Puño';
-      if (isThumbsUp(l)) return 'Pulgar arriba';
-      if (isILoveYou(l)) return 'Te amo';
-      return 'none';
-    }
+async function startTraining() {
+    currentGesture = document.getElementById('gestureName').value;
+    if (!currentGesture) return alert('Ingresa un nombre de seña');
+    
+    isTraining = true;
+    trainingSamples = 0;
+    document.getElementById('gestureName').value = '';
+}
 
-    function countFingers(l) {
-      let c = 0;
-      [8, 12, 16, 20].forEach(i => { if (l[i].y < l[i - 2].y) c++; });
-      const right = l[17].x < l[5].x;
-      if (right ? l[4].x < l[3].x : l[4].x > l[3].x) c++;
-      return c;
-    }
+async function startDetection() {
+    isDetecting = true;
+    document.getElementById('status').innerText = 'Modo detección activo';
+}
 
-    function isThumbsUp(l) {
-      const thumbUp = l[4].y < l[3].y;
-      const others = [8, 12, 16, 20].every(i => l[i].y > l[i - 2].y);
-      return thumbUp && others;
-    }
+async function init() {
+    await setupCamera();
+    video.play();
+    
+    canvas = document.getElementById('canvas');
+    ctx = canvas.getContext('2d');
+    
+    await initializeHandDetection();
+    setInterval(processFrame, 100);
+}
 
-    function isILoveYou(l) {
-      return (
-        l[4].y < l[3].y &&
-        l[8].y < l[6].y &&
-        l[20].y < l[18].y &&
-        l[12].y > l[10].y &&
-        l[16].y > l[14].y
-      );
-    }
-
-    function detectMovement(buffer) {
-      const first = buffer[0].lm[0];
-      const last = buffer[buffer.length - 1].lm[0];
-      return Math.hypot(last.x - first.x, last.y - first.y);
-    }
-
-    function updateMessage() {
-      messageEl.textContent = detected.join(' · ');
-    }
-  </script>
+init();
+</script>
 </body>
-</html>
+</html>v
