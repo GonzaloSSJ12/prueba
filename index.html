@@ -55,11 +55,14 @@
     const ctx = canvasElement.getContext('2d');
     const messageEl = document.getElementById('message');
 
+    // --- VARIABLES GLOBALES ---
+    const FRAME_BUFFER = [];
+    const BUFFER_SIZE = 8;       // número de frames a considerar
+    const CONFIRM_THRESHOLD = 5; // cuántos frames deben coincidir
+    let lastConfirmed = null;
+    
     // Para acumular gestos confirmados
     const detected = [];
-    let lastGesture = null;
-    let lastTime = 0;
-    const confirmDelay = 500; // ms
 
     // Inicializar MediaPipe Hands para 2 manos
     const hands = new Hands({
@@ -86,27 +89,48 @@
 
     function onResults(results) {
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      // Dibujar video directamente, CSS ya invierte imagen
       ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        // Dibujar landmarks y conexiones (canvas invertido por CSS)
+        // Dibujar landmarks y conexiones
         results.multiHandLandmarks.forEach(landmarks => {
           drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 2 });
           drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1, radius: 4 });
         });
 
-        // Reconocer gesto en la primera mano
-        const g = recognizeGesture(results.multiHandLandmarks[0]);
-        const now = performance.now();
+        const landmarks = results.multiHandLandmarks[0];
+        // 1️⃣ Detectar candidato este frame:
+        const candidate = recognizeGesture(landmarks) || 'none';
 
-        if (g && g === lastGesture && now - lastTime > confirmDelay) {
-          if (detected[detected.length - 1] !== g) detected.push(g);
+        // 2️⃣ Meterlo en buffer:
+        FRAME_BUFFER.push({ gesture: candidate, lm: landmarks });
+        if (FRAME_BUFFER.length > BUFFER_SIZE) FRAME_BUFFER.shift();
+
+        // 3️⃣ Contar ocurrencias en buffer:
+        const counts = FRAME_BUFFER.reduce((acc, f) => {
+          acc[f.gesture] = (acc[f.gesture] || 0) + 1;
+          return acc;
+        }, {});
+
+        // 4️⃣ Encontrar el gesto más frecuente:
+        let [bestGesture, bestCount] = Object.entries(counts)
+          .reduce(([g0, c0], [g1, c1]) => c1 > c0 ? [g1, c1] : [g0, c0], ['none', 0]);
+
+        // 5️⃣ Si pasa umbral y es nuevo, confirmar:
+        if (bestGesture !== 'none' && bestCount >= CONFIRM_THRESHOLD && bestGesture !== lastConfirmed) {
+          detected.push(bestGesture);
+          lastConfirmed = bestGesture;
           updateMessage();
-          lastTime = now;
-        } else if (g && g !== lastGesture) {
-          lastGesture = g;
-          lastTime = now;
+        }
+
+        // 6️⃣ Para gestos dinámicos (ej: adiós):
+        if (bestGesture === 'adios') {
+          const movement = detectMovement(FRAME_BUFFER);
+          if (movement > 0.1 && bestGesture !== lastConfirmed) {
+            detected.push(bestGesture);
+            lastConfirmed = bestGesture;
+            updateMessage();
+          }
         }
       }
     }
@@ -117,7 +141,7 @@
       if (f === 0) return 'Puño';
       if (isThumbsUp(l)) return 'Pulgar arriba';
       if (isILoveYou(l)) return 'Te amo';
-      return null;
+      return 'none';
     }
 
     function countFingers(l) {
@@ -142,6 +166,12 @@
         l[12].y > l[10].y &&
         l[16].y > l[14].y
       );
+    }
+
+    function detectMovement(buffer) {
+      const first = buffer[0].lm[0];
+      const last = buffer[buffer.length - 1].lm[0];
+      return Math.hypot(last.x - first.x, last.y - first.y);
     }
 
     function updateMessage() {
