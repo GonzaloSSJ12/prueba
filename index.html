@@ -1,142 +1,199 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Detección de Señas con IA</title>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection@2.0.0"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
-    <style>
-        #video-container { position: relative; }
-        #video { transform: scaleX(-1); }
-        #canvas { position: absolute; top: 0; left: 0; }
-        .controls { margin: 20px 0; }
-        input, button { margin: 5px; padding: 8px; }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Detector de Señas con Entrenamiento</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+      background: #f0f0f0;
+      font-family: sans-serif;
+    }
+    #video, #overlay {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%) scaleX(-1);
+      width: 640px;
+      height: 480px;
+    }
+    #video { z-index: 1; }
+    #overlay { 
+      z-index: 2;
+      pointer-events: none;
+    }
+    #message {
+      margin-top: 520px;
+      font-size: 1.5em;
+      color: #333;
+      text-align: center;
+      width: 640px;
+      white-space: pre-wrap;
+    }
+    .controls {
+      margin: 10px;
+      padding: 10px;
+      z-index: 3;
+    }
+    input, button {
+      padding: 8px;
+      margin: 5px;
+      font-size: 1em;
+    }
+  </style>
 </head>
 <body>
-    <div class="controls">
-        <input type="text" id="gestureName" placeholder="Nombre de la seña">
-        <button onclick="startTraining()">Agregar Seña</button>
-        <button onclick="startDetection()">Comenzar Detección</button>
-    </div>
-    <div id="video-container">
-        <video id="video" width="640" height="480" autoplay></video>
-        <canvas id="canvas" width="640" height="480"></canvas>
-    </div>
-    <div id="status">Estado: Sin entrenar</div>
-    <div id="result"></div>
+  <h1>Detector de Señas Entrenables</h1>
+  <div class="controls">
+    <input type="text" id="gestureName" placeholder="Nombre del gesto">
+    <button onclick="startTraining()">Agregar Gesto</button>
+    <button onclick="toggleDetection()">Iniciar Detección</button>
+  </div>
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div id="message"></div>
 
-<script>
-let detector;
-let video;
-let canvas;
-let ctx;
-let classifier = knnClassifier.create();
-let trainingData = {};
-let currentGesture = null;
-let trainingSamples = 0;
-let isTraining = false;
-let isDetecting = false;
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
-async function setupCamera() {
-    video = document.getElementById('video');
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
+  <script>
+    let classifier = knnClassifier.create();
+    let isTraining = false;
+    let isDetecting = false;
+    let currentGesture = null;
+    let trainingSamples = 0;
+    const detectedGestures = [];
     
-    return new Promise((resolve) => {
-        video.onloadedmetadata = () => {
-            resolve(video);
-        };
+    const videoElement = document.getElementById('video');
+    const canvasElement = document.getElementById('overlay');
+    canvasElement.width = 640;
+    canvasElement.height = 480;
+    const ctx = canvasElement.getContext('2d');
+    const messageEl = document.getElementById('message');
+
+    const hands = new Hands({
+      locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-}
+    
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
 
-async function initializeHandDetection() {
-    detector = await handPoseDetection.createDetector(
-        handPoseDetection.SupportedModels.MediaPipeHands,
-        {
-            runtime: 'mediapipe',
-            modelType: 'full',
-            solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/hands/'
-        }
-    );
-}
+    hands.onResults(results => {
+      ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-function drawHands(hands) {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    hands.forEach(hand => {
-        hand.keypoints.forEach(point => {
-            ctx.beginPath();
-            ctx.arc(point.x, point.y, 5, 0, 2 * Math.PI);
-            ctx.fillStyle = 'red';
-            ctx.fill();
+      if (results.multiHandLandmarks) {
+        results.multiHandLandmarks.forEach(landmarks => {
+          window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
+            {color: '#00FF00', lineWidth: 2});
+          window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
         });
+
+        if (isTraining || isDetecting) {
+          processGesture(results.multiHandLandmarks[0]);
+        }
+      }
     });
-}
 
-async function getHandEmbedding(hand) {
-    const keypoints = hand.keypoints.map(point => [point.x, point.y, point.z]);
-    return tf.tensor2d(keypoints.flat(), [1, 63]);
-}
+    const camera = new Camera(videoElement, {
+      onFrame: async () => await hands.send({ image: videoElement }),
+      width: 640,
+      height: 480
+    });
+    camera.start();
 
-async function processFrame() {
-    if (!isTraining && !isDetecting) return;
-    
-    const hands = await detector.estimateHands(video);
-    drawHands(hands);
-    
-    if (hands.length > 0) {
-        const embedding = await getHandEmbedding(hands[0]);
+    async function processGesture(landmarks) {
+      const features = getNormalizedFeatures(landmarks);
+      
+      if (isTraining) {
+        classifier.addExample(tf.tensor2d(features, [1, 63]), currentGesture);
+        trainingSamples++;
+        messageEl.textContent = `Entrenando: ${currentGesture} (${trainingSamples}/3)`;
         
-        if (isTraining) {
-            classifier.addExample(embedding, currentGesture);
-            trainingSamples++;
-            document.getElementById('status').innerText = 
-                `Entrenando: ${currentGesture} (${trainingSamples}/3)`;
-            
-            if (trainingSamples >= 3) {
-                isTraining = false;
-                trainingSamples = 0;
-                document.getElementById('status').innerText = 
-                    `Seña ${currentGesture} entrenada!`;
-            }
+        if (trainingSamples >= 3) {
+          isTraining = false;
+          messageEl.textContent = `${currentGesture} entrenado!`;
+          trainingSamples = 0;
         }
-        
-        if (isDetecting) {
-            const result = await classifier.predictClass(embedding);
-            document.getElementById('result').innerText = 
-                `Seña detectada: ${result.label}`;
+      }
+      
+      if (isDetecting) {
+        const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
+        if (result.confidences[result.label] > 0.7) {
+          detectedGestures.push(result.label);
+          updateMessage();
         }
+      }
+    }
+
+    function getNormalizedFeatures(landmarks) {
+      const minMax = landmarks.reduce((acc, l) => ({
+        minX: Math.min(acc.minX, l.x),
+        maxX: Math.max(acc.maxX, l.x),
+        minY: Math.min(acc.minY, l.y),
+        maxY: Math.max(acc.maxY, l.y)
+      }), {minX: 1, maxX: 0, minY: 1, maxY: 0});
+
+      return landmarks.flatMap(l => [
+        (l.x - minMax.minX) / (minMax.maxX - minMax.minX),
+        (l.y - minMax.minY) / (minMax.maxY - minMax.minY),
+        l.z
+      ]);
+    }
+
+    function startTraining() {
+      currentGesture = document.getElementById('gestureName').value.trim();
+      if (!currentGesture) return alert('Ingresa un nombre para el gesto');
+      
+      isTraining = true;
+      document.getElementById('gestureName').value = '';
+    }
+
+    function toggleDetection() {
+      isDetecting = !isDetecting;
+      messageEl.textContent = isDetecting ? 
+        'Modo detección activo' : 'Modo detección desactivado';
+    }
+
+    function updateMessage() {
+      messageEl.textContent = detectedGestures.join(' → ');
+    }
+
+    // Guardar y cargar modelo (opcional)
+    async function saveModel() {
+      const dataset = classifier.getClassifierDataset();
+      const datasetObj = {};
+      Object.keys(dataset).forEach(key => {
+        datasetObj[key] = Array.from(dataset[key].dataSync());
+      });
+      localStorage.setItem('gestureModel', JSON.stringify(datasetObj));
+    }
+
+    async function loadModel() {
+      const savedModel = localStorage.getItem('gestureModel');
+      if (savedModel) {
+        const dataset = JSON.parse(savedModel);
+        Object.keys(dataset).forEach(key => {
+          const tensor = tf.tensor2d(dataset[key], [dataset[key].length / 63, 63]);
+          classifier.addDataset(tensor, key);
+        });
+      }
     }
     
-    requestAnimationFrame(processFrame);
-}
-
-async function startTraining() {
-    currentGesture = document.getElementById('gestureName').value;
-    if (!currentGesture) return alert('Ingresa un nombre de seña');
-    
-    isTraining = true;
-    trainingSamples = 0;
-    document.getElementById('gestureName').value = '';
-}
-
-async function startDetection() {
-    isDetecting = true;
-    document.getElementById('status').innerText = 'Modo detección activo';
-}
-
-async function init() {
-    await setupCamera();
-    video.play();
-    
-    canvas = document.getElementById('canvas');
-    ctx = canvas.getContext('2d');
-    
-    await initializeHandDetection();
-    setInterval(processFrame, 100);
-}
-
-init();
-</script>
+    // Cargar modelo al iniciar
+    loadModel();
+  </script>
 </body>
-</html>v
+</html>
