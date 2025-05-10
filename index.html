@@ -60,6 +60,16 @@
       background: #4CAF50;
       transition: width 0.3s;
     }
+    #detection-countdown {
+      position: absolute;
+      top: 50px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 2em;
+      color: red;
+      z-index: 4;
+      display: none;
+    }
   </style>
 </head>
 <body>
@@ -103,7 +113,79 @@
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-    
+     <div id="detection-countdown"></div>
+
+  <script>
+    // Variables de estado modificadas
+    let lastDetectionTime = 0;
+    let detectionCoolDown = 3000; // 3 segundos
+    let currentDetection = null;
+    let detectionConfidence = 0;
+    let detectionCountdown = 0;
+    let isCoolingDown = false;
+
+    async function processGesture(landmarks) {
+      if (!isTraining && !isDetecting) return;
+      
+      const features = getNormalizedFeatures(landmarks);
+      
+      if (isTraining) {
+        // ... (mantener misma lógica de entrenamiento) ...
+      }
+      
+      if (isDetecting && !isCoolingDown) {
+        const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
+        
+        if (result.confidences[result.label] > 0.9) {
+          if (result.label === currentDetection) {
+            detectionConfidence++;
+          } else {
+            currentDetection = result.label;
+            detectionConfidence = 1;
+          }
+
+          // Confirmar detección después de 500ms de consistencia
+          if (detectionConfidence >= 5) {
+            handleConfirmedDetection(result.label);
+          }
+        }
+      }
+    }
+
+    function handleConfirmedDetection(gesture) {
+      if (Date.now() - lastDetectionTime < detectionCoolDown) return;
+      
+      isCoolingDown = true;
+      lastDetectionTime = Date.now();
+      detectedGestures.push(gesture);
+      updateMessage();
+      startDetectionCooldown();
+    }
+
+    function startDetectionCooldown() {
+      const countdownEl = document.getElementById('detection-countdown');
+      let remaining = 3;
+      
+      countdownEl.style.display = 'block';
+      
+      const interval = setInterval(() => {
+        countdownEl.textContent = `Próxima detección en: ${remaining}`;
+        remaining--;
+        
+        if (remaining < 0) {
+          clearInterval(interval);
+          countdownEl.style.display = 'none';
+          isCoolingDown = false;
+          currentDetection = null;
+          detectionConfidence = 0;
+        }
+      }, 1000);
+    }
+
+    function updateMessage() {
+      // Mostrar solo la última detección confirmada
+      messageEl.textContent = `Seña detectada: ${detectedGestures[detectedGestures.length - 1] || 'Ninguna'}`;
+    }
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
