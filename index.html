@@ -20,7 +20,7 @@
     .camera-container {
       position: relative;
       width: 100%;
-      max-width: 640;
+      max-width: 480;
       margin-top: 20px;
     }
     #video, #overlay {
@@ -259,6 +259,7 @@
 
     function handleDetection(gesture) {
       if (gesture !== lastDetection) {
+        await sleep(1000);
         translationsEl.innerHTML += `<div>${gesture}</div>`;
         lastDetection = gesture;
         translationsEl.scrollTop = translationsEl.scrollHeight;
