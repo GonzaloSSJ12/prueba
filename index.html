@@ -97,7 +97,7 @@
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
   </div>
-
+  
   <div class="controls">
     <input type="text" id="gestureName" placeholder="Nombre del gesto">
     <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
@@ -107,7 +107,7 @@
       <div id="progress-bar"></div>
     </div>
   </div>
-
+  
   <div id="translations"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -127,13 +127,20 @@
     const translationsEl = document.getElementById('translations');
     const progressBar = document.getElementById('progress-bar');
     const progressContainer = document.getElementById('progress');
-
-    // Configurar canvas
-    canvasElement.width = videoElement.offsetWidth;
-    canvasElement.height = videoElement.offsetHeight;
     const ctx = canvasElement.getContext('2d');
 
-    // Configurar MediaPipe Hands
+    function resizeCanvas() {
+      canvasElement.width = videoElement.videoWidth || videoElement.offsetWidth;
+      canvasElement.height = videoElement.videoHeight || videoElement.offsetHeight;
+    }
+
+    videoElement.onloadedmetadata = () => {
+      resizeCanvas();
+    };
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
@@ -148,9 +155,6 @@
     hands.onResults(results => {
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // Eliminamos el dibujo del video para evitar duplicación visual
-      // ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
-
       if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach(landmarks => {
           window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
@@ -164,9 +168,10 @@
       }
     });
 
-    // Iniciar cámara
     const camera = new Camera(videoElement, {
-      onFrame: async () => await hands.send({ image: videoElement }),
+      onFrame: async () => {
+        await hands.send({ image: videoElement });
+      },
       width: canvasElement.width,
       height: canvasElement.height
     });
