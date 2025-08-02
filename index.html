@@ -97,7 +97,7 @@
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
   </div>
-  
+
   <div class="controls">
     <input type="text" id="gestureName" placeholder="Nombre del gesto">
     <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
@@ -107,7 +107,7 @@
       <div id="progress-bar"></div>
     </div>
   </div>
-  
+
   <div id="translations"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -121,7 +121,7 @@
     let currentGesture = null;
     let trainingStartTime = 0;
     let lastDetection = '';
-    
+
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('overlay');
     const translationsEl = document.getElementById('translations');
@@ -137,7 +137,7 @@
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
-    
+
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,
@@ -147,7 +147,9 @@
 
     hands.onResults(results => {
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      //ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      // Eliminamos el dibujo del video para evitar duplicación visual
+      // ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach(landmarks => {
@@ -172,17 +174,17 @@
 
     async function processGesture(landmarks) {
       const features = getNormalizedFeatures(landmarks);
-      
+
       if (isTraining) {
         const elapsed = Date.now() - trainingStartTime;
         const progress = Math.min(elapsed / 3000 * 100, 100);
         progressBar.style.width = `${progress}%`;
-        
+
         if (elapsed <= 3000) {
           classifier.addExample(tf.tensor2d(features, [1, 63]), currentGesture);
         }
       }
-      
+
       if (isDetecting) {
         const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
         if (result.confidences[result.label] > 0.9) {
@@ -198,11 +200,11 @@
         y: l.y - wrist.y,
         z: l.z - wrist.z
       }));
-      
+
       const maxVal = Math.max(
         ...relativeLandmarks.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)])
       );
-      
+
       return relativeLandmarks.flatMap(l => [
         l.x / maxVal,
         l.y / maxVal,
@@ -213,17 +215,16 @@
     async function startTraining() {
       currentGesture = document.getElementById('gestureName').value.trim();
       if (!currentGesture) return alert('Ingrese nombre del gesto');
-      
+
       const btn = document.getElementById('trainBtn');
       btn.disabled = true;
       document.getElementById('gestureName').value = '';
-      
-      // Cuenta regresiva de entrenamiento
+
       progressContainer.style.display = 'block';
       progressBar.style.width = '0%';
       isTraining = true;
       trainingStartTime = Date.now();
-      
+
       setTimeout(() => {
         isTraining = false;
         progressContainer.style.display = 'none';
@@ -252,7 +253,6 @@
       lastDetection = '';
     }
 
-    // Persistencia del modelo
     async function saveModel() {
       const dataset = classifier.getClassifierDataset();
       const datasetObj = {};
@@ -272,7 +272,7 @@
         });
       }
     }
-    
+
     loadModel();
   </script>
 </body>
