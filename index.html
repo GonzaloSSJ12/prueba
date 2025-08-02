@@ -146,27 +146,27 @@
     });
 
     hands.setOptions({
-      maxNumHands: 1,
+      maxNumHands: 2,
       modelComplexity: 1,
       minDetectionConfidence: 0.8,
       minTrackingConfidence: 0.7
     });
 
     hands.onResults(results => {
-      resizeCanvas();
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-      ctx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
       if (results.multiHandLandmarks) {
-        results.multiHandLandmarks.forEach(landmarks => {
-          window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
-            {color: '#00FF00', lineWidth: 2});
-          window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
-        });
+        results.multiHandLandmarks.forEach((landmarks, i) => {
+          const handLabel = results.multiHandedness[i].label.toLowerCase(); // 'left' o 'right'
 
-        if (isTraining || isDetecting) {
-          processGesture(results.multiHandLandmarks[0]);
-        }
+          window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
+            {color: handLabel === 'left' ? '#00AAFF' : '#00FF00', lineWidth: 2});
+          window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+
+          if (isTraining || isDetecting) {
+            processGesture(landmarks, handLabel);
+          }
+        });
       }
     });
 
@@ -179,8 +179,9 @@
     });
     camera.start();
 
-    async function processGesture(landmarks) {
+    async function processGesture(landmarks, handLabel) {
       const features = getNormalizedFeatures(landmarks);
+      const labelWithHand = `${currentGesture || ''}_${handLabel}`;
 
       if (isTraining) {
         const elapsed = Date.now() - trainingStartTime;
@@ -188,7 +189,7 @@
         progressBar.style.width = `${progress}%`;
 
         if (elapsed <= 3000) {
-          classifier.addExample(tf.tensor2d(features, [1, 63]), currentGesture);
+          classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
         }
       }
 
@@ -236,7 +237,7 @@
         isTraining = false;
         progressContainer.style.display = 'none';
         btn.disabled = false;
-        translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado!</div>`;
+        translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado (izq./der.)</div>`;
         saveModel();
       }, 3000);
     }
