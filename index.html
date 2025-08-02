@@ -130,16 +130,12 @@
     const ctx = canvasElement.getContext('2d');
 
     function resizeCanvas() {
-      canvasElement.width = videoElement.videoWidth || videoElement.offsetWidth;
-      canvasElement.height = videoElement.videoHeight || videoElement.offsetHeight;
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
     }
 
-    videoElement.onloadedmetadata = () => {
-      resizeCanvas();
-    };
-
+    videoElement.addEventListener('loadedmetadata', resizeCanvas);
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
 
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -153,7 +149,13 @@
     });
 
     hands.onResults(results => {
+      resizeCanvas(); // Asegura que canvas se mantenga sincronizado
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvasElement.width, 0);
+      ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+      ctx.restore();
 
       if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach((landmarks, i) => {
@@ -174,8 +176,8 @@
       onFrame: async () => {
         await hands.send({ image: videoElement });
       },
-      width: canvasElement.width,
-      height: canvasElement.height
+      width: 640,
+      height: 480
     });
     camera.start();
 
