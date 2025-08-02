@@ -103,6 +103,7 @@
     <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
     <button onclick="toggleDetection()" id="detectBtn">Iniciar Detección</button>
     <button onclick="clearTranslations()" id="clearBtn">Limpiar Traducciones</button>
+    <button id="switchCamBtn">Cambiar Cámara</button>
     <div id="progress">
       <div id="progress-bar"></div>
     </div>
@@ -121,6 +122,8 @@
     let currentGesture = null;
     let trainingStartTime = 0;
     let lastDetection = '';
+    let currentDeviceId = null;
+    let camera = null;
 
     const videoElement = document.getElementById('video');
     const canvasElement = document.getElementById('overlay');
@@ -140,6 +143,65 @@
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
     });
+    async function startCamera(deviceId) {
+  if(camera) {
+    camera.stop();
+  }
+
+  const constraints = {
+    video: {
+      width: 960,
+      height: 720,
+      deviceId: deviceId ? { exact: deviceId } : undefined
+    }
+  };
+
+  camera = new Camera(videoElement, {
+    onFrame: async () => {
+      await hands.send({ image: videoElement });
+    },
+    width: 960,
+    height: 720,
+    constraints: constraints.video
+  });
+
+  await camera.start();
+}
+
+// Listar cámaras y mostrar para elegir
+async function listCameras() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevices = devices.filter(d => d.kind === 'videoinput');
+  console.log('Cámaras disponibles:', videoDevices);
+
+  // Por ejemplo, selecciona la primera cámara (frontal)
+  if(videoDevices.length > 0) {
+    currentDeviceId = videoDevices[0].deviceId;
+    await startCamera(currentDeviceId);
+  }
+}
+
+// Cambiar a siguiente cámara
+async function switchCamera() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevices = devices.filter(d => d.kind === 'videoinput');
+  if(videoDevices.length <= 1) return; // Solo 1 cámara
+
+  // Encontrar índice de la cámara actual
+  const currentIndex = videoDevices.findIndex(d => d.deviceId === currentDeviceId);
+  // Siguiente índice (o volver al inicio)
+  const nextIndex = (currentIndex + 1) % videoDevices.length;
+  currentDeviceId = videoDevices[nextIndex].deviceId;
+
+  await startCamera(currentDeviceId);
+}
+
+// Inicializar
+listCameras();
+
+// Puedes usar un botón para cambiar de cámara:
+document.getElementById('switchCamBtn').addEventListener('click', switchCamera);
+  
 
     hands.setOptions({
       maxNumHands: 2,
