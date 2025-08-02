@@ -128,6 +128,7 @@
     const progressBar = document.getElementById('progress-bar');
     const progressContainer = document.getElementById('progress');
     const ctx = canvasElement.getContext('2d');
+    ctx.scale(-1, 1);
 
     function resizeCanvas() {
       canvasElement.width = videoElement.videoWidth;
