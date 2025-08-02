@@ -258,11 +258,8 @@
     }
     function handleDetection(gesture) {
       if (gesture !== lastDetection) {
-        await sleep(1000);
         translationsEl.innerHTML += `<div>${gesture}</div>`;
-        await sleep(1000);
         lastDetection = gesture;
-        await sleep(1000);
         translationsEl.scrollTop = translationsEl.scrollHeight;
       }
     }
