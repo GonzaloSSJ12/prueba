@@ -130,16 +130,12 @@
     const ctx = canvasElement.getContext('2d');
 
     function resizeCanvas() {
-      canvasElement.width = videoElement.videoWidth || videoElement.offsetWidth;
-      canvasElement.height = videoElement.videoHeight || videoElement.offsetHeight;
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
     }
 
-    videoElement.onloadedmetadata = () => {
-      resizeCanvas();
-    };
-
+    videoElement.addEventListener('loadedmetadata', resizeCanvas);
     window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
 
     const hands = new Hands({
       locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -153,7 +149,13 @@
     });
 
     hands.onResults(results => {
+      resizeCanvas(); // Asegura que canvas se mantenga sincronizado
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvasElement.width, 0);
+      ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+      ctx.restore();
 
       if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach((landmarks, i) => {
@@ -162,11 +164,6 @@
           window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
             {color: handLabel === 'left' ? '#00AAFF' : '#00FF00', lineWidth: 2});
           window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
-
-          const wrist = landmarks[0];
-          ctx.font = '18px Arial';
-          ctx.fillStyle = '#000';
-          ctx.fillText(handLabel === 'left' ? 'L' : 'R', wrist.x * canvasElement.width, wrist.y * canvasElement.height);
 
           if (isTraining || isDetecting) {
             processGesture(landmarks, handLabel);
