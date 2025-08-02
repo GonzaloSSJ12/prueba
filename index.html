@@ -153,21 +153,30 @@
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       ctx.save();
       ctx.scale(1, 1);
-      ctx.translate(-canvasElement.width, 0);
       ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-
-      ctx.fillStyle = 'black';
-      ctx.font = '20px Arial';
-      ctx.fillText(handLabel === 'left' ? 'L' : 'R', wrist.x * canvasElement.width + 10, wrist.y * canvasElement.height + 5);
       ctx.restore();
 
       if (results.multiHandLandmarks) {
         results.multiHandLandmarks.forEach((landmarks, i) => {
           const handLabel = results.multiHandedness[i].label.toLowerCase(); // 'left' o 'right'
 
-          window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, 
-            {color: handLabel === 'left' ? '#00AAFF' : '#00FF00', lineWidth: 2});
-          window.drawLandmarks(ctx, landmarks, {color: '#FF0000', lineWidth: 1});
+          window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
+            color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
+            lineWidth: 2
+          });
+          window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
+
+          // Dibujar "L" o "R" junto a la muñeca
+          const wrist = landmarks[0];
+          const label = handLabel === 'left' ? 'L' : 'R';
+          const x = wrist.x * canvasElement.width + 10;
+          const y = wrist.y * canvasElement.height + 5;
+
+          ctx.save();
+          ctx.fillStyle = 'black';
+          ctx.font = '20px Arial';
+          ctx.fillText(label, x, y);
+          ctx.restore();
 
           if (isTraining || isDetecting) {
             processGesture(landmarks, handLabel);
