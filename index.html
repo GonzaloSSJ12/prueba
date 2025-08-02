@@ -155,6 +155,10 @@
       ctx.scale(1, 1);
       ctx.translate(-canvasElement.width, 0);
       ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+
+      ctx.fillStyle = 'black';
+      ctx.font = '20px Arial';
+      ctx.fillText(handLabel === 'left' ? 'L' : 'R', wrist.x * canvasElement.width + 10, wrist.y * canvasElement.height + 5);
       ctx.restore();
 
       if (results.multiHandLandmarks) {
