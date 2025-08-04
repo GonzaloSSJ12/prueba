@@ -19,13 +19,15 @@
     }
     .camera-container {
       position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       width: 100%;
-      max-width: 480;
+      max-width: 320px;
       margin-top: 20px;
     }
     #video, #overlay {
-      width: 50%;
-      position: center;
+      width: 100%;
       height: auto;
       transform: scaleX(-1);
     }
@@ -37,7 +39,7 @@
     }
     .controls {
       width: 100%;
-      max-width: 980;
+      max-width: 320px;
       padding: 10px;
       box-sizing: border-box;
     }
@@ -75,20 +77,14 @@
     }
     #translations {
       width: 100%;
-      max-width: 980;
+      max-width: 320px;
       padding: 10px;
       box-sizing: border-box;
       font-size: 1.2em;
       min-height: 100px;
       background: white;
       border-radius: 5px;
-      margin: 10px;
-    }
-    @media (max-width: 640px) {
-      #video, #overlay {
-        height: 60vh;
-        object-fit: cover;
-      }
+      margin: 10px 0;
     }
   </style>
 </head>
@@ -98,7 +94,7 @@
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
   </div>
-  
+
   <div class="controls">
     <input type="text" id="gestureName" placeholder="Nombre del gesto">
     <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
@@ -108,7 +104,7 @@
       <div id="progress-bar"></div>
     </div>
   </div>
-  
+
   <div id="translations"></div>
 
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
@@ -150,7 +146,7 @@
     });
 
     hands.onResults(results => {
-      resizeCanvas(); // Asegura que canvas se mantenga sincronizado
+      resizeCanvas();
       ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
       ctx.save();
       ctx.scale(1, 1);
@@ -167,7 +163,7 @@
           });
           window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
-          // Dibujar "L" o "R" junto a la muñeca
+          // Etiqueta "L" o "R" cerca de la muñeca
           const wrist = landmarks[0];
           const label = handLabel === 'left' ? 'L' : 'R';
           const x = wrist.x * canvasElement.width + 10;
@@ -257,6 +253,7 @@
         saveModel();
       }, 3000);
     }
+
     function handleDetection(gesture) {
       if (gesture !== lastDetection) {
         translationsEl.innerHTML += `<div>${gesture}</div>`;
@@ -267,7 +264,7 @@
 
     function toggleDetection() {
       isDetecting = !isDetecting;
-      document.getElementById('detectBtn').textContent = 
+      document.getElementById('detectBtn').textContent =
         isDetecting ? 'Detener Detección' : 'Iniciar Detección';
     }
 
