@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Traductor de Señas</title>
+  
+  <!-- Carga del CSS -->
+  <link rel="stylesheet" href="style.css" />
+  
+  <!-- Librerías externas -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.11.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/knn-classifier"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+</head>
+<body>
+  <h1>Traductor de Señas</h1>
+  <div class="camera-container">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <div class="controls">
+    <input type="text" id="gestureName" placeholder="Nombre del gesto" />
+    <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
+    <button onclick="toggleDetection()" id="detectBtn">Iniciar Detección</button>
+    <button onclick="clearTranslations()" id="clearBtn">Limpiar Traducciones</button>
+    <button onclick="toggleCamera()">Cambiar Cámara</button>
+    <div id="progress"><div id="progress-bar"></div></div>
+  </div>
+
+  <div id="translations"></div>
+
+  <!-- Tu JS separado -->
+  <script src="funcion.js"></script>
+</body>
+</html>
