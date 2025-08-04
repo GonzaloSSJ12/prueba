@@ -17,35 +17,47 @@
       flex-direction: column;
       align-items: center;
     }
+
     h1 { margin-top: 20px; }
+
     .camera-container {
       position: relative;
       width: 60vw;
-      margin: 5% 20%;
       aspect-ratio: 4 / 3;
+      margin: 5% auto;
+      resize: both;
+      overflow: hidden;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      background: #000;
     }
+
+    .camera-container::after {
+      content: '';
+      position: absolute;
+      right: 5px;
+      bottom: 5px;
+      width: 16px;
+      height: 16px;
+      background: linear-gradient(135deg, transparent 50%, #666 50%);
+      cursor: nwse-resize;
+      z-index: 10;
+    }
+
     #video, #overlay {
       position: absolute;
       top: 0; left: 0;
       width: 100%; height: 100%;
     }
-    #overlay { pointer-events: none; }
 
-    /* Slider de tamaño */
-    #sizeSlider {
-      position: absolute;
-      top: 10px;
-      right: 10px;
-      z-index: 10;
-      width: 100px;
-      opacity: 0.8;
-    }
+    #overlay { pointer-events: none; }
 
     .controls {
       width: 100%;
       max-width: 480px;
       padding: 10px;
     }
+
     input, button {
       width: 100%;
       padding: 12px;
@@ -54,12 +66,15 @@
       border-radius: 6px;
       border: 1px solid #ccc;
     }
+
     button {
       background-color: #007bff;
       color: white;
       border: none;
     }
+
     button:disabled { background-color: #888; }
+
     #progress {
       height: 20px;
       background: #ddd;
@@ -67,12 +82,14 @@
       overflow: hidden;
       display: none;
     }
+
     #progress-bar {
       height: 100%;
       width: 0%;
       background: #28a745;
       transition: width 0.2s;
     }
+
     #translations {
       width: 100%;
       max-width: 480px;
@@ -90,7 +107,6 @@
   <div class="camera-container">
     <video id="video" autoplay muted playsinline></video>
     <canvas id="overlay"></canvas>
-    <input type="range" id="sizeSlider" min="40" max="100" value="60" />
   </div>
 
   <div class="controls">
@@ -124,7 +140,7 @@
     const translationsEl = document.getElementById('translations');
 
     let camera = null;
-    let facingMode = 'user';
+    let facingMode = 'user'; // 'user' (frontal) o 'environment' (trasera)
 
     function resizeCanvas() {
       canvasElement.width = videoElement.videoWidth;
@@ -301,12 +317,6 @@
     }
 
     loadModel();
-
-    // Slider de tamaño
-    document.getElementById('sizeSlider').addEventListener('input', (e) => {
-      const value = e.target.value; // de 40 a 100
-      document.querySelector('.camera-container').style.width = `${value}vw`;
-    });
   </script>
 </body>
 </html>
