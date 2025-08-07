@@ -220,4 +220,11 @@ function mostrarGestosEntrenados() {
 
   const json = JSON.stringify(gestos, null, 2);
   console.log('👇 Copiá este contenido para tu archivo "gestos_entrenados.json":\n\n', json);
+
+  const output = document.getElementById('gestosOutput');
+  if (output) {
+    output.value = json;
+  }
 }
+
+
