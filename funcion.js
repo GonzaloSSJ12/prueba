@@ -13,7 +13,7 @@ const progressContainer = document.getElementById('progress');
 const translationsEl = document.getElementById('translations');
 
 let camera = null;
-let facingMode = 'user'; // 'user' (frontal) o 'environment' (trasera)
+let facingMode = 'user';
 
 function resizeCanvas() {
   canvasElement.width = videoElement.videoWidth;
@@ -98,6 +98,7 @@ async function processGesture(landmarks, handLabel) {
 
     if (elapsed <= 3000) {
       classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
+      trainedGestures.push({ nombre: labelWithHand, features });
     }
   }
 
@@ -143,6 +144,7 @@ function startTraining() {
     btn.disabled = false;
     translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado (izq./der.)</div>`;
     saveModel();
+    saveGesturesToFile(); // Autoexportar
   }, 3000);
 }
 
@@ -186,27 +188,18 @@ async function loadModel() {
 
 loadModel();
 
-function exportGesturesToFile() {
-  const dataset = classifier.getClassifierDataset();
-  const exportData = [];
+/// NUEVO: Guardado automático de gestos creados por el usuario
+let trainedGestures = [];
 
-  Object.keys(dataset).forEach((label) => {
-    const data = dataset[label].dataSync();
-    const numExamples = data.length / 63;
-
-    for (let i = 0; i < numExamples; i++) {
-      const features = Array.from(data.slice(i * 63, (i + 1) * 63));
-      exportData.push({ nombre: label, features });
-    }
+function saveGesturesToFile() {
+  const blob = new Blob([JSON.stringify(trainedGestures, null, 2)], {
+    type: 'application/json',
   });
 
-  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-
   const link = document.createElement('a');
   link.href = url;
-  link.download = 'gestos_entrenados_temporal.json';
+  link.download = 'gestos_entrenados.json';
   link.click();
-
   URL.revokeObjectURL(url);
 }
