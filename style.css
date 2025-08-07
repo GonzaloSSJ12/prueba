@@ -92,3 +92,29 @@ button:disabled { background-color: #888; cursor: not-allowed; }
   border-radius: 5px;
   overflow-y: auto;
 }
+
+#export-container {
+  position: absolute;
+  bottom: 10px;
+  left: 10px;
+  width: 90%;
+  max-width: 800px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+}
+
+#export-container h2 {
+  font-size: 1rem;
+  margin-bottom: 10px;
+}
+
+#gestosOutput {
+  width: 100%;
+  height: 200px;
+  font-family: monospace;
+  font-size: 0.9rem;
+  padding: 10px;
+  resize: vertical;
+}
