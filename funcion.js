@@ -203,3 +203,21 @@ function saveGesturesToFile() {
   link.click();
   URL.revokeObjectURL(url);
 }
+
+function mostrarGestosEntrenados() {
+  const dataset = classifier.getClassifierDataset();
+  const gestos = [];
+
+  Object.keys(dataset).forEach((label) => {
+    const data = dataset[label].dataSync();
+    const numEjemplos = data.length / 63;
+
+    for (let i = 0; i < numEjemplos; i++) {
+      const features = Array.from(data.slice(i * 63, (i + 1) * 63));
+      gestos.push({ nombre: label, features });
+    }
+  });
+
+  const json = JSON.stringify(gestos, null, 2);
+  console.log('👇 Copiá este contenido para tu archivo "gestos_entrenados.json":\n\n', json);
+}
