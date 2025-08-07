@@ -185,3 +185,28 @@ async function loadModel() {
 }
 
 loadModel();
+
+function exportGesturesToFile() {
+  const dataset = classifier.getClassifierDataset();
+  const exportData = [];
+
+  Object.keys(dataset).forEach((label) => {
+    const data = dataset[label].dataSync();
+    const numExamples = data.length / 63;
+
+    for (let i = 0; i < numExamples; i++) {
+      const features = Array.from(data.slice(i * 63, (i + 1) * 63));
+      exportData.push({ nombre: label, features });
+    }
+  });
+
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'gestos_entrenados_temporal.json';
+  link.click();
+
+  URL.revokeObjectURL(url);
+}
