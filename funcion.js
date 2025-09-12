@@ -26,31 +26,59 @@ hands.setOptions({
 });
 
 hands.onResults((results) => {
-  resizeCanvas();
+  // Ajusta el canvas al tamaño del video
+  if (videoElement.videoWidth && videoElement.videoHeight) {
+    canvasElement.width = videoElement.videoWidth;
+    canvasElement.height = videoElement.videoHeight;
+  }
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+  // Dibuja el video
   if (videoElement.readyState >= 2) {
     ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
   }
 
-  if (results.multiHandLandmarks) {
-    results.multiHandLandmarks.forEach((landmarks, i) => {
-      const handLabel = results.multiHandedness[i].label.toLowerCase();
-      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
-        color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
-        lineWidth: 2,
-      });
-      window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
-
-      const wrist = landmarks[0];
-      const label = handLabel === 'left' ? 'L' : 'R';
-      ctx.fillStyle = 'black';
-      ctx.font = '20px Arial';
-      ctx.fillText(label, wrist.x * canvasElement.width + 10, wrist.y * canvasElement.height + 5);
-
-      processGesture(landmarks, handLabel);
-    });
+  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+    // No hay manos detectadas
+    return;
   }
+
+  results.multiHandLandmarks.forEach((landmarks, i) => {
+    const handLabel = results.multiHandedness[i].label.toLowerCase();
+
+    // Dibuja conexiones simples entre puntos (esqueleto)
+    const connections = [
+      [0,1],[1,2],[2,3],[3,4],       // pulgar
+      [0,5],[5,6],[6,7],[7,8],       // índice
+      [0,9],[9,10],[10,11],[11,12],  // medio
+      [0,13],[13,14],[14,15],[15,16],// anular
+      [0,17],[17,18],[18,19],[19,20] // meñique
+    ];
+    ctx.strokeStyle = handLabel === 'left' ? '#00AAFF' : '#00FF00';
+    ctx.lineWidth = 2;
+    connections.forEach(([start, end]) => {
+      ctx.beginPath();
+      ctx.moveTo(landmarks[start].x * canvasElement.width, landmarks[start].y * canvasElement.height);
+      ctx.lineTo(landmarks[end].x * canvasElement.width, landmarks[end].y * canvasElement.height);
+      ctx.stroke();
+    });
+
+    // Dibuja puntos
+    landmarks.forEach(l => {
+      ctx.beginPath();
+      ctx.arc(l.x * canvasElement.width, l.y * canvasElement.height, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = '#FF0000';
+      ctx.fill();
+    });
+
+    // Llama a la predicción
+    processGesture(landmarks, handLabel);
+
+    // Depuración
+    console.log(`Hand detected: ${handLabel}`, landmarks);
+  });
 });
+
 
 function resizeCanvas() {
   if (!videoElement.videoWidth) return;
@@ -244,3 +272,4 @@ async function loadPretrainedGestures() {
     console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
 }
+
