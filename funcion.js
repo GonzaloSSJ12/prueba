@@ -1,4 +1,4 @@
-// funcion.js - versión actualizada para cargar gestos preentrenados y cooldown
+// funcion.js - versión actualizada para cargar gestos preentrenados con addExample
 const classifier = knnClassifier.create();
 let isTraining = false;
 let currentGesture = null;
@@ -13,13 +13,13 @@ const ctx = canvasElement.getContext('2d');
 const progressBar = document.getElementById('progress-bar');
 const progressContainer = document.getElementById('progress');
 const translationsEl = document.getElementById('translations');
-const hands = new Hands({locateFile: (file) => `./libs/hands/${file}`});
 
+const hands = new Hands({ locateFile: (file) => `./libs/hands/${file}` });
 
 let camera = null;
 let facingMode = 'user';
 let resolution = { width: 640, height: 480 };
-const isDetecting = true; // siempre detecta
+const isDetecting = true;
 
 function resizeCanvas() {
   if (!videoElement.videoWidth) return;
@@ -29,10 +29,6 @@ function resizeCanvas() {
 
 videoElement.addEventListener('loadedmetadata', resizeCanvas);
 window.addEventListener('resize', resizeCanvas);
-
-const hands = new Hands({
-  locateFile: (file) => `libs/${file}` // asume que los .wasm / assets están en libs/ o usa la version local
-});
 
 hands.setOptions({
   maxNumHands: 2,
@@ -44,7 +40,6 @@ hands.setOptions({
 hands.onResults((results) => {
   resizeCanvas();
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  // dibuja vídeo
   if (videoElement.readyState >= 2) {
     ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
   }
@@ -52,15 +47,12 @@ hands.onResults((results) => {
   if (results.multiHandLandmarks) {
     results.multiHandLandmarks.forEach((landmarks, i) => {
       const handLabel = results.multiHandedness[i].label.toLowerCase();
-
-      // Dibuja esqueleto y puntos
       window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
         color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
         lineWidth: 2,
       });
       window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
-      // Etiqueta muñeca
       const wrist = landmarks[0];
       const label = handLabel === 'left' ? 'L' : 'R';
       const x = wrist.x * canvasElement.width + 10;
@@ -69,7 +61,6 @@ hands.onResults((results) => {
       ctx.font = '20px Arial';
       ctx.fillText(label, x, y);
 
-      // Procesa gesto (detección en tiempo real)
       processGesture(landmarks, handLabel);
     });
   }
@@ -94,22 +85,20 @@ function startCamera() {
 startCamera();
 
 (async function startup() {
-  await loadPretrainedGestures(); // carga el JSON con ejemplos ya entrenados
-  await loadModel();              // luego carga lo que tengas guardado en localStorage
+  await loadPretrainedGestures();
 })();
 
 async function processGesture(landmarks, handLabel) {
   const features = getNormalizedFeatures(landmarks);
   if (!features || features.length !== 63) return;
 
-  // intenta predecir
-  if (isDetecting) {
+  if (isDetecting && classifier.getNumClasses() > 0) {
     try {
       const input = tf.tensor2d(features, [1, 63]);
       const result = await classifier.predictClass(input);
       input.dispose();
 
-      if (result && result.label && result.confidences && result.confidences[result.label] !== undefined) {
+      if (result && result.label && result.confidences[result.label] !== undefined) {
         const conf = result.confidences[result.label];
         const now = Date.now();
         if (conf > 0.9 && (now - lastDetectionTime) > detectionCooldownMs) {
@@ -118,12 +107,10 @@ async function processGesture(landmarks, handLabel) {
         }
       }
     } catch (e) {
-      // si no hay ejemplos añadidos o error, se ignora
-      // console.log('predict error', e);
+      console.error('predict error', e);
     }
   }
 
-  // si estás en modo entrenamiento (botón), añade ejemplos al classifier
   if (isTraining) {
     const elapsed = Date.now() - trainingStartTime;
     const progress = Math.min((elapsed / 3000) * 100, 100);
@@ -168,7 +155,6 @@ function startTraining() {
 }
 
 function handleDetection(gesture) {
-  // filtra nombre si quieres simplificar (por ejemplo quitar sufijos _left/_right)
   if (gesture !== lastDetection) {
     if (translationsEl) {
       translationsEl.innerHTML += `<div>${gesture}</div>`;
@@ -201,28 +187,9 @@ async function saveModel() {
   }
 }
 
-async function loadModel() {
-  try {
-    const savedModel = localStorage.getItem('gestureModel');
-    if (savedModel) {
-      const dataset = JSON.parse(savedModel);
-      Object.keys(dataset).forEach((key) => {
-        const arr = dataset[key];
-        if (!arr || arr.length % 63 !== 0) return;
-        const tensor = tf.tensor2d(arr, [arr.length / 63, 63]);
-        classifier.addDataset(tensor, key);
-      });
-      console.log('Local model loaded.');
-    }
-  } catch (e) {
-    console.error('loadModel error', e);
-  }
-}
-
 /**
  * loadPretrainedGestures
- * - intenta cargar el JSON en dos rutas (./gestos_entrenados.json y ./libs/gestos_entrenados.json)
- * - agrupa por nombre y crea tensores para añadir al classifier
+ * - carga el JSON de gestos y agrega ejemplos usando addExample()
  */
 async function loadPretrainedGestures() {
   const tried = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
@@ -235,9 +202,7 @@ async function loadPretrainedGestures() {
       data = await resp.json();
       console.log('Pretrained gestures loaded from', path);
       break;
-    } catch (e) {
-      // continua probando otras rutas
-    }
+    } catch (e) { /* continua probando otras rutas */ }
   }
 
   if (!data) {
@@ -245,28 +210,12 @@ async function loadPretrainedGestures() {
     return;
   }
 
-  // Data: array de {nombre, features}
-  const buckets = {};
-  for (const item of data) {
-    if (!item || !item.nombre || !item.features) continue;
-    // Asegurarse que features tenga longitud 63
-    if (!Array.isArray(item.features) || item.features.length !== 63) continue;
-    if (!buckets[item.nombre]) buckets[item.nombre] = [];
-    buckets[item.nombre].push(item.features);
-  }
-
-  // Convertir a tensores y añadir al classifier
-  Object.keys(buckets).forEach((label) => {
-    const examples = buckets[label];
-    const flat = examples.flat();
-    const tensor = tf.tensor2d(flat, [examples.length, 63]);
-    try {
-      classifier.addDataset(tensor, label);
-      console.log(`Added ${examples.length} examples for '${label}'`);
-    } catch (e) {
-      console.error('addDataset error for', label, e);
-      tensor.dispose();
-    }
+  // Añadir ejemplos al classifier
+  data.forEach(item => {
+    if (!item || !item.nombre || !item.features || item.features.length !== 63) return;
+    const tensor = tf.tensor2d(item.features, [1, 63]);
+    classifier.addExample(tensor, item.nombre);
   });
-}
 
+  console.log('Gestos preentrenados añadidos. Clases cargadas:', classifier.getNumClasses());
+}
