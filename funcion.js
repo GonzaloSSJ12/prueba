@@ -1,9 +1,11 @@
+// funcion.js - versión actualizada para cargar gestos preentrenados y cooldown
 const classifier = knnClassifier.create();
 let isTraining = false;
-let isDetecting = false;
 let currentGesture = null;
 let trainingStartTime = 0;
 let lastDetection = '';
+let lastDetectionTime = 0;
+const detectionCooldownMs = 800; // ajusta este valor (ms) para retraso entre detecciones
 
 const videoElement = document.getElementById('video');
 const canvasElement = document.getElementById('overlay');
@@ -14,8 +16,11 @@ const translationsEl = document.getElementById('translations');
 
 let camera = null;
 let facingMode = 'user';
+let resolution = { width: 640, height: 480 };
+const isDetecting = true; // siempre detecta
 
 function resizeCanvas() {
+  if (!videoElement.videoWidth) return;
   canvasElement.width = videoElement.videoWidth;
   canvasElement.height = videoElement.videoHeight;
 }
@@ -24,7 +29,7 @@ videoElement.addEventListener('loadedmetadata', resizeCanvas);
 window.addEventListener('resize', resizeCanvas);
 
 const hands = new Hands({
-  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+  locateFile: (file) => `libs/${file}` // asume que los .wasm / assets están en libs/ o usa la version local
 });
 
 hands.setOptions({
@@ -37,30 +42,33 @@ hands.setOptions({
 hands.onResults((results) => {
   resizeCanvas();
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+  // dibuja vídeo
+  if (videoElement.readyState >= 2) {
+    ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+  }
 
   if (results.multiHandLandmarks) {
     results.multiHandLandmarks.forEach((landmarks, i) => {
       const handLabel = results.multiHandedness[i].label.toLowerCase();
 
+      // Dibuja esqueleto y puntos
       window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
         color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
         lineWidth: 2,
       });
       window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
+      // Etiqueta muñeca
       const wrist = landmarks[0];
       const label = handLabel === 'left' ? 'L' : 'R';
       const x = wrist.x * canvasElement.width + 10;
       const y = wrist.y * canvasElement.height + 5;
-
       ctx.fillStyle = 'black';
       ctx.font = '20px Arial';
       ctx.fillText(label, x, y);
 
-      if (isTraining || isDetecting) {
-        processGesture(landmarks, handLabel);
-      }
+      // Procesa gesto (detección en tiempo real)
+      processGesture(landmarks, handLabel);
     });
   }
 });
@@ -73,56 +81,72 @@ function startCamera() {
       await hands.send({ image: videoElement });
     },
     facingMode: facingMode,
-    width: 640,
-    height: 480,
+    width: resolution.width,
+    height: resolution.height,
   });
 
   camera.start();
 }
 
-function toggleCamera() {
-  facingMode = facingMode === 'user' ? 'environment' : 'user';
-  startCamera();
-}
-
+// inicio cámara y carga gestos
 startCamera();
+
+(async function startup() {
+  await loadPretrainedGestures(); // carga el JSON con ejemplos ya entrenados
+  await loadModel();              // luego carga lo que tengas guardado en localStorage
+})();
 
 async function processGesture(landmarks, handLabel) {
   const features = getNormalizedFeatures(landmarks);
-  const labelWithHand = `${currentGesture || ''}_${handLabel}`;
+  if (!features || features.length !== 63) return;
 
-  if (isTraining) {
-    const elapsed = Date.now() - trainingStartTime;
-    const progress = Math.min((elapsed / 3000) * 100, 100);
-    progressBar.style.width = `${progress}%`;
+  // intenta predecir
+  if (isDetecting) {
+    try {
+      const input = tf.tensor2d(features, [1, 63]);
+      const result = await classifier.predictClass(input);
+      input.dispose();
 
-    if (elapsed <= 3000) {
-      classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
-      trainedGestures.push({ nombre: labelWithHand, features });
+      if (result && result.label && result.confidences && result.confidences[result.label] !== undefined) {
+        const conf = result.confidences[result.label];
+        const now = Date.now();
+        if (conf > 0.9 && (now - lastDetectionTime) > detectionCooldownMs) {
+          handleDetection(result.label);
+          lastDetectionTime = now;
+        }
+      }
+    } catch (e) {
+      // si no hay ejemplos añadidos o error, se ignora
+      // console.log('predict error', e);
     }
   }
 
-  if (isDetecting) {
-    const result = await classifier.predictClass(tf.tensor2d(features, [1, 63]));
-    if (result.confidences[result.label] > 0.9) {
-      handleDetection(result.label);
+  // si estás en modo entrenamiento (botón), añade ejemplos al classifier
+  if (isTraining) {
+    const elapsed = Date.now() - trainingStartTime;
+    const progress = Math.min((elapsed / 3000) * 100, 100);
+    if (progressBar) progressBar.style.width = `${progress}%`;
+
+    const labelWithHand = `${currentGesture}_${handLabel}`;
+    classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
+
+    if (elapsed >= 3000) {
+      isTraining = false;
+      if (progressContainer) progressContainer.style.display = 'none';
+      const btn = document.getElementById('trainBtn');
+      if (btn) btn.disabled = false;
+      if (translationsEl) translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado (izq./der.)</div>`;
+      saveModel();
     }
   }
 }
 
 function getNormalizedFeatures(landmarks) {
+  if (!landmarks || landmarks.length < 21) return null;
   const wrist = landmarks[0];
-  const relativeLandmarks = landmarks.map((l) => ({
-    x: l.x - wrist.x,
-    y: l.y - wrist.y,
-    z: l.z - wrist.z,
-  }));
-
-  const maxVal = Math.max(
-    ...relativeLandmarks.flatMap((l) => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)])
-  );
-
-  return relativeLandmarks.flatMap((l) => [l.x / maxVal, l.y / maxVal, l.z / maxVal]);
+  const relative = landmarks.map(l => ({ x: l.x - wrist.x, y: l.y - wrist.y, z: l.z - wrist.z }));
+  const maxVal = Math.max(...relative.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)]), 1e-6);
+  return relative.flatMap(l => [l.x / maxVal, l.y / maxVal, l.z / maxVal]);
 }
 
 function startTraining() {
@@ -130,127 +154,116 @@ function startTraining() {
   if (!currentGesture) return alert('Ingrese nombre del gesto');
 
   const btn = document.getElementById('trainBtn');
-  btn.disabled = true;
-  document.getElementById('gestureName').value = '';
+  if (btn) btn.disabled = true;
+  const input = document.getElementById('gestureName');
+  if (input) input.value = '';
 
-  progressContainer.style.display = 'block';
-  progressBar.style.width = '0%';
+  if (progressContainer) progressContainer.style.display = 'block';
+  if (progressBar) progressBar.style.width = '0%';
+
   isTraining = true;
   trainingStartTime = Date.now();
-
-  setTimeout(() => {
-    isTraining = false;
-    progressContainer.style.display = 'none';
-    btn.disabled = false;
-    translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado (izq./der.)</div>`;
-    saveModel();
-    saveGesturesToFile(); // Autoexportar
-  }, 3000);
 }
 
 function handleDetection(gesture) {
+  // filtra nombre si quieres simplificar (por ejemplo quitar sufijos _left/_right)
   if (gesture !== lastDetection) {
-    translationsEl.innerHTML += `<div>${gesture}</div>`;
+    if (translationsEl) {
+      translationsEl.innerHTML += `<div>${gesture}</div>`;
+      translationsEl.scrollTop = translationsEl.scrollHeight;
+    }
     lastDetection = gesture;
-    translationsEl.scrollTop = translationsEl.scrollHeight;
   }
-}
-
-function toggleDetection() {
-  isDetecting = !isDetecting;
-  document.getElementById('detectBtn').textContent = isDetecting ? 'Detener Detección' : 'Iniciar Detección';
 }
 
 function clearTranslations() {
-  translationsEl.innerHTML = '';
+  if (translationsEl) translationsEl.innerHTML = '';
   lastDetection = '';
 }
 
+function toggleCamera() {
+  facingMode = facingMode === 'user' ? 'environment' : 'user';
+  startCamera();
+}
+
 async function saveModel() {
-  const dataset = classifier.getClassifierDataset();
-  const datasetObj = {};
-  Object.keys(dataset).forEach((key) => {
-    datasetObj[key] = Array.from(dataset[key].dataSync());
-  });
-  localStorage.setItem('gestureModel', JSON.stringify(datasetObj));
+  try {
+    const dataset = classifier.getClassifierDataset();
+    const datasetObj = {};
+    Object.keys(dataset).forEach((key) => {
+      datasetObj[key] = Array.from(dataset[key].dataSync());
+    });
+    localStorage.setItem('gestureModel', JSON.stringify(datasetObj));
+  } catch (e) {
+    console.error('saveModel error', e);
+  }
 }
 
 async function loadModel() {
-  const savedModel = localStorage.getItem('gestureModel');
-  if (savedModel) {
-    const dataset = JSON.parse(savedModel);
-    Object.keys(dataset).forEach((key) => {
-      const tensor = tf.tensor2d(dataset[key], [dataset[key].length / 63, 63]);
-      classifier.addDataset(tensor, key);
-    });
+  try {
+    const savedModel = localStorage.getItem('gestureModel');
+    if (savedModel) {
+      const dataset = JSON.parse(savedModel);
+      Object.keys(dataset).forEach((key) => {
+        const arr = dataset[key];
+        if (!arr || arr.length % 63 !== 0) return;
+        const tensor = tf.tensor2d(arr, [arr.length / 63, 63]);
+        classifier.addDataset(tensor, key);
+      });
+      console.log('Local model loaded.');
+    }
+  } catch (e) {
+    console.error('loadModel error', e);
   }
 }
 
-loadModel();
+/**
+ * loadPretrainedGestures
+ * - intenta cargar el JSON en dos rutas (./gestos_entrenados.json y ./libs/gestos_entrenados.json)
+ * - agrupa por nombre y crea tensores para añadir al classifier
+ */
+async function loadPretrainedGestures() {
+  const tried = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
+  let data = null;
 
-/// NUEVO: Guardado automático de gestos creados por el usuario
-let trainedGestures = [];
+  for (const path of tried) {
+    try {
+      const resp = await fetch(path, { cache: 'no-cache' });
+      if (!resp.ok) continue;
+      data = await resp.json();
+      console.log('Pretrained gestures loaded from', path);
+      break;
+    } catch (e) {
+      // continua probando otras rutas
+    }
+  }
 
-function saveGesturesToFile() {
-  const blob = new Blob([JSON.stringify(trainedGestures, null, 2)], {
-    type: 'application/json',
-  });
+  if (!data) {
+    console.warn('No se encontró gestos_entrenados.json en las rutas esperadas.');
+    return;
+  }
 
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = 'gestos_entrenados.json';
-  link.click();
-  URL.revokeObjectURL(url);
-}
+  // Data: array de {nombre, features}
+  const buckets = {};
+  for (const item of data) {
+    if (!item || !item.nombre || !item.features) continue;
+    // Asegurarse que features tenga longitud 63
+    if (!Array.isArray(item.features) || item.features.length !== 63) continue;
+    if (!buckets[item.nombre]) buckets[item.nombre] = [];
+    buckets[item.nombre].push(item.features);
+  }
 
-function mostrarGestosEntrenados() {
-  const dataset = classifier.getClassifierDataset();
-  const gestos = [];
-
-  Object.keys(dataset).forEach((label) => {
-    const data = dataset[label].dataSync();
-    const numEjemplos = data.length / 63;
-
-    for (let i = 0; i < numEjemplos; i++) {
-      const features = Array.from(data.slice(i * 63, (i + 1) * 63));
-      gestos.push({ nombre: label, features });
+  // Convertir a tensores y añadir al classifier
+  Object.keys(buckets).forEach((label) => {
+    const examples = buckets[label];
+    const flat = examples.flat();
+    const tensor = tf.tensor2d(flat, [examples.length, 63]);
+    try {
+      classifier.addDataset(tensor, label);
+      console.log(`Added ${examples.length} examples for '${label}'`);
+    } catch (e) {
+      console.error('addDataset error for', label, e);
+      tensor.dispose();
     }
   });
-
-  const json = JSON.stringify(gestos, null, 2);
-  console.log('👇 Copiá este contenido para tu archivo "gestos_entrenados.json":\n\n', json);
-
-  const output = document.getElementById('gestosOutput');
-  if (output) {
-    output.value = json;
-  }
 }
-// Registrar el Service Worker
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => {
-                console.log('✅ Service Worker registrado con éxito:', registration.scope);
-            })
-            .catch(error => {
-                console.error('❌ Error al registrar el Service Worker:', error);
-            });
-    });
-}
-
-
-// Registrar el Service Worker
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js')
-            .then(registration => {
-                console.log('✅ Service Worker registrado con éxito:', registration.scope);
-            })
-            .catch(error => {
-                console.error('❌ Error al registrar el Service Worker:', error);
-            });
-    });
-}
-
-
