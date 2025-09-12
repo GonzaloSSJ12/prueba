@@ -49,11 +49,11 @@ hands.onResults((results) => {
       const handLabel = results.multiHandedness[i].label.toLowerCase();
 
       // Dibuja esqueleto y puntos
-      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
         color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
         lineWidth: 2,
       });
-      window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
+      drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
       // Etiqueta muñeca
       const wrist = landmarks[0];
@@ -263,6 +263,7 @@ async function loadPretrainedGestures() {
     console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
 }
+
 
 
 
