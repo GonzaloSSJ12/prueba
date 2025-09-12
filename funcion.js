@@ -1,11 +1,11 @@
-// funcion.js - versión actualizada para cargar gestos preentrenados con addExample
+// funcion.js - versión corregida para KNN actual
 const classifier = knnClassifier.create();
 let isTraining = false;
 let currentGesture = null;
 let trainingStartTime = 0;
 let lastDetection = '';
 let lastDetectionTime = 0;
-const detectionCooldownMs = 800; // ajusta este valor (ms) para retraso entre detecciones
+const detectionCooldownMs = 800;
 
 const videoElement = document.getElementById('video');
 const canvasElement = document.getElementById('overlay');
@@ -14,21 +14,9 @@ const progressBar = document.getElementById('progress-bar');
 const progressContainer = document.getElementById('progress');
 const translationsEl = document.getElementById('translations');
 
-const hands = new Hands({ locateFile: (file) => `./libs/hands/${file}` });
-
-let camera = null;
-let facingMode = 'user';
-let resolution = { width: 640, height: 480 };
-const isDetecting = true;
-
-function resizeCanvas() {
-  if (!videoElement.videoWidth) return;
-  canvasElement.width = videoElement.videoWidth;
-  canvasElement.height = videoElement.videoHeight;
-}
-
-videoElement.addEventListener('loadedmetadata', resizeCanvas);
-window.addEventListener('resize', resizeCanvas);
+const hands = new Hands({
+  locateFile: (file) => `libs/${file}`
+});
 
 hands.setOptions({
   maxNumHands: 2,
@@ -47,37 +35,41 @@ hands.onResults((results) => {
   if (results.multiHandLandmarks) {
     results.multiHandLandmarks.forEach((landmarks, i) => {
       const handLabel = results.multiHandedness[i].label.toLowerCase();
-      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
-        color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
-        lineWidth: 2,
-      });
+      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, { color: handLabel === 'left' ? '#00AAFF' : '#00FF00', lineWidth: 2 });
       window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
       const wrist = landmarks[0];
       const label = handLabel === 'left' ? 'L' : 'R';
-      const x = wrist.x * canvasElement.width + 10;
-      const y = wrist.y * canvasElement.height + 5;
       ctx.fillStyle = 'black';
       ctx.font = '20px Arial';
-      ctx.fillText(label, x, y);
+      ctx.fillText(label, wrist.x * canvasElement.width + 10, wrist.y * canvasElement.height + 5);
 
       processGesture(landmarks, handLabel);
     });
   }
 });
 
+let camera = null;
+let facingMode = 'user';
+let resolution = { width: 640, height: 480 };
+
+function resizeCanvas() {
+  if (!videoElement.videoWidth) return;
+  canvasElement.width = videoElement.videoWidth;
+  canvasElement.height = videoElement.videoHeight;
+}
+
+videoElement.addEventListener('loadedmetadata', resizeCanvas);
+window.addEventListener('resize', resizeCanvas);
+
 function startCamera() {
   if (camera) camera.stop();
-
   camera = new Camera(videoElement, {
-    onFrame: async () => {
-      await hands.send({ image: videoElement });
-    },
-    facingMode: facingMode,
+    onFrame: async () => await hands.send({ image: videoElement }),
+    facingMode,
     width: resolution.width,
     height: resolution.height,
   });
-
   camera.start();
 }
 
@@ -86,19 +78,21 @@ startCamera();
 
 (async function startup() {
   await loadPretrainedGestures();
+  await loadModel();
 })();
 
 async function processGesture(landmarks, handLabel) {
   const features = getNormalizedFeatures(landmarks);
   if (!features || features.length !== 63) return;
 
-  if (isDetecting && classifier.getNumClasses() > 0) {
+  // Predicción
+  if (true) { // siempre detecta
     try {
-      const input = tf.tensor2d(features, [1, 63]);
+      const input = tf.tensor2d([features]);
       const result = await classifier.predictClass(input);
       input.dispose();
 
-      if (result && result.label && result.confidences[result.label] !== undefined) {
+      if (result?.label && result.confidences?.[result.label] !== undefined) {
         const conf = result.confidences[result.label];
         const now = Date.now();
         if (conf > 0.9 && (now - lastDetectionTime) > detectionCooldownMs) {
@@ -107,24 +101,25 @@ async function processGesture(landmarks, handLabel) {
         }
       }
     } catch (e) {
-      console.error('predict error', e);
+      // no hay ejemplos o error => ignora
     }
   }
 
+  // Entrenamiento
   if (isTraining) {
     const elapsed = Date.now() - trainingStartTime;
     const progress = Math.min((elapsed / 3000) * 100, 100);
     if (progressBar) progressBar.style.width = `${progress}%`;
 
     const labelWithHand = `${currentGesture}_${handLabel}`;
-    classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
+    classifier.addExample(tf.tensor2d([features]), labelWithHand);
 
     if (elapsed >= 3000) {
       isTraining = false;
       if (progressContainer) progressContainer.style.display = 'none';
       const btn = document.getElementById('trainBtn');
       if (btn) btn.disabled = false;
-      if (translationsEl) translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado (izq./der.)</div>`;
+      if (translationsEl) translationsEl.innerHTML += `<div>✅ ${currentGesture} entrenado</div>`;
       saveModel();
     }
   }
@@ -178,7 +173,7 @@ async function saveModel() {
   try {
     const dataset = classifier.getClassifierDataset();
     const datasetObj = {};
-    Object.keys(dataset).forEach((key) => {
+    Object.keys(dataset).forEach(key => {
       datasetObj[key] = Array.from(dataset[key].dataSync());
     });
     localStorage.setItem('gestureModel', JSON.stringify(datasetObj));
@@ -187,35 +182,51 @@ async function saveModel() {
   }
 }
 
-/**
- * loadPretrainedGestures
- * - carga el JSON de gestos y agrega ejemplos usando addExample()
- */
+async function loadModel() {
+  try {
+    const savedModel = localStorage.getItem('gestureModel');
+    if (savedModel) {
+      const dataset = JSON.parse(savedModel);
+      Object.keys(dataset).forEach(key => {
+        const arr = dataset[key];
+        if (!arr || arr.length % 63 !== 0) return;
+        const examples = arr.length / 63;
+        for (let i = 0; i < examples; i++) {
+          const tensor = tf.tensor2d([arr.slice(i * 63, (i + 1) * 63)]);
+          classifier.addExample(tensor, key);
+          tensor.dispose();
+        }
+      });
+      console.log('Local model loaded.');
+    }
+  } catch (e) {
+    console.error('loadModel error', e);
+  }
+}
+
 async function loadPretrainedGestures() {
-  const tried = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
+  const paths = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
   let data = null;
 
-  for (const path of tried) {
+  for (const path of paths) {
     try {
       const resp = await fetch(path, { cache: 'no-cache' });
       if (!resp.ok) continue;
       data = await resp.json();
       console.log('Pretrained gestures loaded from', path);
       break;
-    } catch (e) { /* continua probando otras rutas */ }
+    } catch (e) {}
   }
 
   if (!data) {
-    console.warn('No se encontró gestos_entrenados.json en las rutas esperadas.');
+    console.warn('No se encontró gestos_entrenados.json');
     return;
   }
 
-  // Añadir ejemplos al classifier
-  data.forEach(item => {
-    if (!item || !item.nombre || !item.features || item.features.length !== 63) return;
-    const tensor = tf.tensor2d(item.features, [1, 63]);
+  for (const item of data) {
+    if (!item?.nombre || !item?.features || item.features.length !== 63) continue;
+    const tensor = tf.tensor2d([item.features]);
     classifier.addExample(tensor, item.nombre);
-  });
-
-  console.log('Gestos preentrenados añadidos. Clases cargadas:', classifier.getNumClasses());
+    tensor.dispose();
+  }
 }
