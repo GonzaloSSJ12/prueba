@@ -1,181 +1,153 @@
-/* Reset y base */
-* { box-sizing: border-box; }
-html, body { height: 100%; }
-body.app-root {
-  margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
-  background: linear-gradient(135deg, #0f1724 0%, #0b1220 100%); /* oscuro */
-  color: #e6eef8;
+/* Reset */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; font-family: "Inter", sans-serif; }
+
+/* Fondo general */
+body {
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  color: #e2e8f0;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
   padding: 20px;
 }
 
-/* Page container */
-.page-container {
-  width: 100%;
-  max-width: 1100px;
-  padding: 12px;
-}
-
-/* Title */
-.page-title {
+/* Título */
+h1 {
+  font-size: 2rem;
+  margin-bottom: 20px;
+  color: #f8fafc;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.5);
   text-align: center;
-  font-size: 28px;
-  line-height: 1.05;
-  color: #c7d2fe; /* indigo-100 */
-  margin: 0 0 18px;
-  font-weight: 700;
 }
 
-/* Camera frame */
-.camera-frame {
+/* Contenedor de la cámara */
+.camera-container {
   position: relative;
-  width: 100%;
-  aspect-ratio: 16 / 9;
+  width: 90%;
   max-width: 900px;
-  margin: 0 auto 20px;
-  background: linear-gradient(180deg, #3f4550 0%, #2b2f36 100%);
-  border-radius: 14px;
+  aspect-ratio: 16/9;
+  border-radius: 16px;
   overflow: hidden;
-  border: 2px solid rgba(148,163,184,0.08);
-  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5), 0 4px 8px rgba(0,0,0,0.25);
+  box-shadow: 0 12px 28px rgba(0,0,0,0.4);
+  margin-bottom: 20px;
+  background: #000;
 }
 
-/* inner preview area */
-.camera-preview {
+video, canvas {
+  inset: 0;
   width: 100%;
   height: 100%;
-  display:flex;
-  align-items:center;
-  justify-content:center;
 }
 
-.camera-placeholder {
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  padding: 28px;
-  color: #c7d2fe;
+/* Panel de controles */
+.controls {
+  width: 100%;
+  max-width: 900px;
+  background: rgba(30,41,59,0.8);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.4);
 }
 
-.camera-icon {
-  width: 64px;
-  height: 64px;
-  stroke: #c7d2fe;
-  opacity: 0.95;
+/* Inputs y botones */
+.controls input, 
+.controls button, 
+.controls textarea {
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 1rem;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+/* Input */
+.controls input {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
+/* Botones */
+.controls button {
+  background: #334155;
+  color: #f8fafc;
+  font-weight: 600;
+  cursor: pointer;
+}
+.controls button:hover { background: #475569; }
+.controls button:active { background: #1e293b; }
+
+/* Botón especial (detectar) */
+#detectBtn {
+  background: #10b981;
+}
+#detectBtn:hover { background: #059669; }
+
+/* Export container */
+#export-container {
+  background: rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+#export-container h2 {
+  font-size: 1rem;
   margin-bottom: 8px;
 }
 
-.placeholder-text {
-  margin-top: 6px;
-  color: #c7d2fe;
-  font-weight: 500;
+#gestosOutput {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: monospace;
+  background: #0f172a;
+  color: #f1f5f9;
+  border: 1px solid #334155;
 }
 
-/* status indicator (top-right) */
-.status-indicator {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  display:flex;
-  align-items:center;
-  gap:8px;
-  z-index: 20;
+/* Barra de progreso */
+#progress {
+  width: 100%;
+  height: 10px;
+  background: #475569;
+  border-radius: 6px;
+  overflow: hidden;
+  display: none;
+}
+#progress-bar {
+  width: 0%;
+  height: 100%;
+  background: #3b82f6;
+  transition: width 0.2s;
 }
 
-.status-dot-wrap { position: relative; width: 18px; height: 18px; display:inline-block; }
-.status-ping {
-  position:absolute;
-  inset:0;
-  border-radius:50%;
-  background: rgba(34,197,94,0.5);
-  animation: ping 1.6s cubic-bezier(.4,0,0.6,1) infinite;
-}
-.status-dot {
-  position:absolute;
-  inset:3px;
-  border-radius:50%;
-  background: #22c55e;
-  box-shadow: 0 0 6px rgba(34,197,94,0.6);
-}
-.status-text {
-  color: #86efac;
-  font-size: 13px;
-  font-weight: 600;
-}
-
-/* Buttons row */
-.controls-row {
-  display:flex;
-  gap:12px;
-  justify-content:center;
-  align-items:center;
-  margin-top: 12px;
+/* Traducciones detectadas */
+#translations {
+  width: 100%;
   max-width: 900px;
+  background: #1e293b;
+  border-radius: 8px;
+  margin-top: 20px;
+  padding: 12px;
+  min-height: 80px;
+  overflow-y: auto;
+  box-shadow: inset 0 0 6px rgba(0,0,0,0.4);
 }
-
-/* Button base */
-.btn {
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  gap:8px;
-  padding: 14px 18px;
-  border-radius: 12px;
-  border: 1px solid rgba(255,255,255,0.04);
-  font-weight: 600;
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 8px 18px rgba(2,6,23,0.6);
-  transition: transform .18s ease, box-shadow .18s ease, background .12s ease;
-  min-width: 140px;
+#translations div {
+  padding: 4px 0;
+  font-size: 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
 }
+#translations div:last-child { border-bottom: none; }
 
-/* Primary */
-.btn-primary {
-  background: linear-gradient(180deg, #111827, #1f2937);
-  color: #f8fafc;
-}
-
-/* Secondary */
-.btn-secondary {
-  background: linear-gradient(180deg, #0f1724, #111827);
-  color: #e6eef8;
-}
-
-/* hover/active */
-.btn:hover { transform: translateY(-3px); box-shadow: 0 14px 30px rgba(2,6,23,0.7); }
-.btn:active { transform: translateY(1px); }
-
-/* pulse animation for primary */
-.btn-pulse {
-  position: relative;
-  overflow: visible;
-}
-.btn-pulse::after {
-  content: "";
-  position: absolute;
-  inset: -6px;
-  border-radius: 14px;
-  background: radial-gradient(circle at center, rgba(255,255,255,0.04), transparent 30%);
-  opacity: 0;
-  animation: pulseBtn 2.4s infinite;
-}
-@keyframes pulseBtn {
-  0% { opacity: 0.35; transform: scale(0.98); }
-  70% { opacity: 0; transform: scale(1.08); }
-  100% { opacity: 0; transform: scale(1); }
-}
-
-/* small icon inside button */
-.btn-icon { width: 18px; height: 18px; opacity: 0.95; }
-
-/* Responsive tweaks */
+/* Responsivo */
 @media (max-width: 640px) {
-  .page-title { font-size: 20px; }
-  .controls-row { flex-direction: column; gap: 10px; }
-  .btn { width: 100%; min-width: unset; padding: 12px; border-radius: 10px; }
+  h1 { font-size: 1.5rem; }
+  .controls { padding: 12px; }
+  .controls input, .controls button { font-size: 0.9rem; }
 }
