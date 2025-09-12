@@ -13,6 +13,8 @@ const ctx = canvasElement.getContext('2d');
 const progressBar = document.getElementById('progress-bar');
 const progressContainer = document.getElementById('progress');
 const translationsEl = document.getElementById('translations');
+const hands = new Hands({locateFile: (file) => `./libs/hands/${file}`});
+
 
 let camera = null;
 let facingMode = 'user';
@@ -267,3 +269,4 @@ async function loadPretrainedGestures() {
     }
   });
 }
+
