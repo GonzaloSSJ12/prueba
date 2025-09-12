@@ -28,44 +28,33 @@ hands.setOptions({
 });
 
 hands.onResults((results) => {
-  // Asegura que el canvas coincida con el video
-  if (videoElement.videoWidth && videoElement.videoHeight) {
-    canvasElement.width = videoElement.videoWidth;
-    canvasElement.height = videoElement.videoHeight;
-  }
-
-  // Limpia canvas
+  resizeCanvas();
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+  ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
 
-  // Dibuja el video detrás del esqueleto
-  if (videoElement.readyState >= 2) {
-    ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-  }
-
-  // Si hay manos detectadas
-  if (results.multiHandLandmarks && results.multiHandedness) {
-    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
-      const landmarks = results.multiHandLandmarks[i];
+  if (results.multiHandLandmarks) {
+    results.multiHandLandmarks.forEach((landmarks, i) => {
       const handLabel = results.multiHandedness[i].label.toLowerCase();
 
-      // Dibuja esqueleto y puntos
-      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {
+      // Dibuja conexiones y puntos de la mano
+      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
         color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
         lineWidth: 2,
       });
-      drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
+      window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
 
-      // Etiqueta muñeca
+      // Dibuja letra "L" o "R" en la muñeca
       const wrist = landmarks[0];
+      const label = handLabel === 'left' ? 'L' : 'R';
       const x = wrist.x * canvasElement.width + 10;
       const y = wrist.y * canvasElement.height + 5;
       ctx.fillStyle = 'black';
       ctx.font = '20px Arial';
-      ctx.fillText(handLabel === 'left' ? 'L' : 'R', x, y);
+      ctx.fillText(label, x, y);
 
-      // Procesa gesto
-      processGesture(landmarks, handLabel);
-    }
+      // Procesar gesto detectado
+      processGesture(landmarks);
+    });
   }
 });
 
@@ -263,6 +252,7 @@ async function loadPretrainedGestures() {
     console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
 }
+
 
 
 
