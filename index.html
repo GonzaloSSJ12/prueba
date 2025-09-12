@@ -1,45 +1,94 @@
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Traductor de Señas</title>
-  
-  <!-- Carga del CSS -->
-  <link rel="stylesheet" href="style.css" />
-  
-  <!-- Librerías externas -->
-  <script src="libs/tf.min.js"></script>
-  <script src="libs/knn-classifier.min.js"></script>
-  <script src="libs/hands.min.js"></script>
-  <script src="libs/drawing_utils.min.js"></script>
-  <script src="libs/camera_utils.min.js"></script>
-
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cámara Interactiva</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        .camera-frame {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05);
+            transition: all 0.3s ease;
+        }
+        .camera-frame:hover {
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.05);
+        }
+        .btn {
+            transition: all 0.2s ease;
+            transform: translateY(0);
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .btn:active {
+            transform: translateY(1px);
+        }
+        .btn-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.5);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(0, 0, 0, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+            }
+        }
+    </style>
 </head>
-<body>
-  <h1>Traductor de Señas</h1>
-  <div class="camera-container">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="overlay"></canvas>
-  </div>
+<body class="bg-gradient-to-br from-gray-950 to-gray-900 min-h-screen font-['Inter'] flex flex-col items-center justify-center p-2 sm:p-4">
+    <div class="max-w-6xl w-full mx-auto px-4">
+        <h1 class="text-2xl sm:text-3xl md:text-4xl font-bold text-center text-indigo-100 mb-4 sm:mb-8">Cámara Interactiva</h1>
+        
+        <!-- Cuadro de la cámara -->
+        <div class="camera-frame bg-white rounded-xl overflow-hidden mb-4 sm:mb-8 relative aspect-video w-full max-w-5xl mx-auto border-2 sm:border-4 border-gray-700">
+            <!-- Placeholder para la cámara -->
+            <div class="w-full h-full bg-gradient-to-br from-gray-700 to-gray-600 flex items-center justify-center">
+                <div class="text-center p-6">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto text-indigo-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <p class="mt-2 text-indigo-200 font-medium">Vista previa de la cámara</p>
+                </div>
+            </div>
+            
+            <!-- Indicador de estado -->
+            <div class="absolute top-4 right-4 flex items-center">
+                <span class="relative flex h-3 w-3">
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                </span>
+                <span class="ml-2 text-xs font-medium text-green-400">Conectado</span>
+            </div>
+        </div>
+        
+        <!-- Contenedor de botones -->
+        <div class="flex flex-nowrap justify-between gap-2 mb-4 sm:mb-8 w-full max-w-5xl mx-auto">
+            <!-- Botón 1 - Principal -->
+            <button class="btn bg-gray-800 hover:bg-gray-700 text-white font-semibold py-4 px-4 rounded-xl shadow-lg flex items-center btn-pulse text-lg justify-center flex-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd" />
+                </svg>
+                Grabar
+            </button>
+            
 
-  <div class="controls">
-    <input type="text" id="gestureName" placeholder="Nombre del gesto" />
-    <button onclick="startTraining()" id="trainBtn">Entrenar Nueva Seña</button>
-    <button onclick="toggleDetection()" id="detectBtn">Iniciar Detección</button>
-    <button onclick="clearTranslations()" id="clearBtn">Limpiar Traducciones</button>
-    <button onclick="toggleCamera()">Cambiar Cámara</button>
-    <div id="export-container">
-  <h2>Gestos entrenados (copiar y pegar)</h2>
-  <textarea id="gestosOutput" readonly></textarea>
-</div>
-    <div id="progress"><div id="progress-bar"></div></div>
-  </div>
-
-  <div id="translations"></div>
-
-  <!-- Tu JS separado -->
-  <script src="funcion.js"></script>
+            
+            <!-- Botón 4 -->
+            <button class="btn bg-gray-800 hover:bg-gray-700 text-white border border-gray-700 font-medium py-4 px-4 rounded-xl shadow-lg flex items-center text-lg justify-center flex-1">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M11.49 3.17c-.38-1.56-2.6-1.56-2.98 0a1.532 1.532 0 01-2.286.948c-1.372-.836-2.942.734-2.106 2.106.54.886.061 2.042-.947 2.287-1.561.379-1.561 2.6 0 2.978a1.532 1.532 0 01.947 2.287c-.836 1.372.734 2.942 2.106 2.106a1.532 1.532 0 012.287.947c.379 1.561 2.6 1.561 2.978 0a1.533 1.533 0 012.287-.947c1.372.836 2.942-.734 2.106-2.106a1.533 1.533 0 01.947-2.287c1.561-.379 1.561-2.6 0-2.978a1.532 1.532 0 01-.947-2.287c.836-1.372-.734-2.942-2.106-2.106a1.532 1.532 0 01-2.287-.947zM10 13a3 3 0 100-6 3 3 0 000 6z" clip-rule="evenodd" />
+                </svg>
+                Ajustes
+            </button>
+        </div>
+    </div>
 </body>
 </html>
-
