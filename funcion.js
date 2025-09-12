@@ -28,58 +28,47 @@ hands.setOptions({
 });
 
 hands.onResults((results) => {
-  // Ajusta el canvas al tamaño del video
+  // Asegura que el canvas coincida con el video
   if (videoElement.videoWidth && videoElement.videoHeight) {
     canvasElement.width = videoElement.videoWidth;
     canvasElement.height = videoElement.videoHeight;
   }
+
+  // Limpia canvas
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-  // Dibuja el video
+  // Dibuja el video detrás del esqueleto
   if (videoElement.readyState >= 2) {
     ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
   }
 
-  if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-    // No hay manos detectadas
-    return;
+  // Si hay manos detectadas
+  if (results.multiHandLandmarks && results.multiHandedness) {
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      const landmarks = results.multiHandLandmarks[i];
+      const handLabel = results.multiHandedness[i].label.toLowerCase();
+
+      // Dibuja esqueleto y puntos
+      window.drawConnectors(ctx, landmarks, window.HAND_CONNECTIONS, {
+        color: handLabel === 'left' ? '#00AAFF' : '#00FF00',
+        lineWidth: 2,
+      });
+      window.drawLandmarks(ctx, landmarks, { color: '#FF0000', lineWidth: 1 });
+
+      // Etiqueta muñeca
+      const wrist = landmarks[0];
+      const x = wrist.x * canvasElement.width + 10;
+      const y = wrist.y * canvasElement.height + 5;
+      ctx.fillStyle = 'black';
+      ctx.font = '20px Arial';
+      ctx.fillText(handLabel === 'left' ? 'L' : 'R', x, y);
+
+      // Procesa gesto
+      processGesture(landmarks, handLabel);
+    }
   }
-
-  results.multiHandLandmarks.forEach((landmarks, i) => {
-    const handLabel = results.multiHandedness[i].label.toLowerCase();
-
-    // Dibuja conexiones simples entre puntos (esqueleto)
-    const connections = [
-      [0,1],[1,2],[2,3],[3,4],       // pulgar
-      [0,5],[5,6],[6,7],[7,8],       // índice
-      [0,9],[9,10],[10,11],[11,12],  // medio
-      [0,13],[13,14],[14,15],[15,16],// anular
-      [0,17],[17,18],[18,19],[19,20] // meñique
-    ];
-    ctx.strokeStyle = handLabel === 'left' ? '#00AAFF' : '#00FF00';
-    ctx.lineWidth = 2;
-    connections.forEach(([start, end]) => {
-      ctx.beginPath();
-      ctx.moveTo(landmarks[start].x * canvasElement.width, landmarks[start].y * canvasElement.height);
-      ctx.lineTo(landmarks[end].x * canvasElement.width, landmarks[end].y * canvasElement.height);
-      ctx.stroke();
-    });
-
-    // Dibuja puntos
-    landmarks.forEach(l => {
-      ctx.beginPath();
-      ctx.arc(l.x * canvasElement.width, l.y * canvasElement.height, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#FF0000';
-      ctx.fill();
-    });
-
-    // Llama a la predicción
-    processGesture(landmarks, handLabel);
-
-    // Depuración
-    console.log(`Hand detected: ${handLabel}`, landmarks);
-  });
 });
+
 
 
 function resizeCanvas() {
@@ -274,5 +263,6 @@ async function loadPretrainedGestures() {
     console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
 }
+
 
 
