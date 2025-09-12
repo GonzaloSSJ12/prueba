@@ -15,7 +15,9 @@ const progressContainer = document.getElementById('progress');
 const translationsEl = document.getElementById('translations');
 
 const hands = new Hands({
-  locateFile: (file) => `libs/${file}`
+  locateFile: (file) => {
+    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+  }
 });
 
 hands.setOptions({
@@ -272,4 +274,5 @@ async function loadPretrainedGestures() {
     console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
 }
+
 
