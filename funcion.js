@@ -1,4 +1,4 @@
-// funcion.js - versión final corregida para KNN actual
+// funcion.js - versión final corregida
 const classifier = knnClassifier.create();
 let isTraining = false;
 let currentGesture = null;
@@ -28,7 +28,9 @@ hands.setOptions({
 hands.onResults((results) => {
   resizeCanvas();
   ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-  if (videoElement.readyState >= 2) ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+  if (videoElement.readyState >= 2) {
+    ctx.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
+  }
 
   if (results.multiHandLandmarks) {
     results.multiHandLandmarks.forEach((landmarks, i) => {
@@ -41,21 +43,14 @@ hands.onResults((results) => {
 
       const wrist = landmarks[0];
       const label = handLabel === 'left' ? 'L' : 'R';
-      const x = wrist.x * canvasElement.width + 10;
-      const y = wrist.y * canvasElement.height + 5;
       ctx.fillStyle = 'black';
       ctx.font = '20px Arial';
-      ctx.fillText(label, x, y);
+      ctx.fillText(label, wrist.x * canvasElement.width + 10, wrist.y * canvasElement.height + 5);
 
       processGesture(landmarks, handLabel);
     });
   }
 });
-
-let camera = null;
-let facingMode = 'user';
-let resolution = { width: 640, height: 480 };
-const isDetecting = true;
 
 function resizeCanvas() {
   if (!videoElement.videoWidth) return;
@@ -66,11 +61,16 @@ function resizeCanvas() {
 videoElement.addEventListener('loadedmetadata', resizeCanvas);
 window.addEventListener('resize', resizeCanvas);
 
+let camera = null;
+let facingMode = 'user';
+let resolution = { width: 640, height: 480 };
+const isDetecting = true;
+
 function startCamera() {
   if (camera) camera.stop();
   camera = new Camera(videoElement, {
-    onFrame: async () => await hands.send({ image: videoElement }),
-    facingMode: facingMode,
+    onFrame: async () => { await hands.send({ image: videoElement }); },
+    facingMode,
     width: resolution.width,
     height: resolution.height,
   });
@@ -84,6 +84,14 @@ startCamera();
   await loadModel();
 })();
 
+function getNormalizedFeatures(landmarks) {
+  if (!landmarks || landmarks.length < 21) return null;
+  const wrist = landmarks[0];
+  const relative = landmarks.map(l => ({ x: l.x - wrist.x, y: l.y - wrist.y, z: l.z - wrist.z }));
+  const maxVal = Math.max(...relative.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)]), 1e-6);
+  return relative.flatMap(l => [l.x / maxVal, l.y / maxVal, l.z / maxVal]);
+}
+
 async function processGesture(landmarks, handLabel) {
   const features = getNormalizedFeatures(landmarks);
   if (!features || features.length !== 63) return;
@@ -94,7 +102,7 @@ async function processGesture(landmarks, handLabel) {
       const result = await classifier.predictClass(input);
       input.dispose();
 
-      if (result && result.label && result.confidences[result.label] !== undefined) {
+      if (result && result.label && result.confidences && result.confidences[result.label] !== undefined) {
         const conf = result.confidences[result.label];
         const now = Date.now();
         if (conf > 0.9 && (now - lastDetectionTime) > detectionCooldownMs) {
@@ -102,7 +110,9 @@ async function processGesture(landmarks, handLabel) {
           lastDetectionTime = now;
         }
       }
-    } catch {}
+    } catch (e) {
+      // sin ejemplos aún, se ignora
+    }
   }
 
   if (isTraining) {
@@ -111,7 +121,7 @@ async function processGesture(landmarks, handLabel) {
     if (progressBar) progressBar.style.width = `${progress}%`;
 
     const labelWithHand = `${currentGesture}_${handLabel}`;
-    classifier.addExample(tf.tensor2d(features, [1, 63]), labelWithHand);
+    classifier.addExample(tf.tensor2d([features]), labelWithHand);
 
     if (elapsed >= 3000) {
       isTraining = false;
@@ -122,14 +132,6 @@ async function processGesture(landmarks, handLabel) {
       saveModel();
     }
   }
-}
-
-function getNormalizedFeatures(landmarks) {
-  if (!landmarks || landmarks.length < 21) return null;
-  const wrist = landmarks[0];
-  const relative = landmarks.map(l => ({ x: l.x - wrist.x, y: l.y - wrist.y, z: l.z - wrist.z }));
-  const maxVal = Math.max(...relative.flatMap(l => [Math.abs(l.x), Math.abs(l.y), Math.abs(l.z)]), 1e-6);
-  return relative.flatMap(l => [l.x / maxVal, l.y / maxVal, l.z / maxVal]);
 }
 
 function startTraining() {
@@ -186,41 +188,59 @@ async function loadModel() {
     const savedModel = localStorage.getItem('gestureModel');
     if (!savedModel) return;
     const dataset = JSON.parse(savedModel);
+
     Object.keys(dataset).forEach(label => {
       const arr = dataset[label];
       if (!arr || arr.length % 63 !== 0) return;
       const numExamples = arr.length / 63;
       for (let i = 0; i < numExamples; i++) {
-        const tensor = tf.tensor2d([arr.slice(i*63, (i+1)*63)]);
+        const tensor = tf.tensor2d([arr.slice(i * 63, (i + 1) * 63)]);
         classifier.addExample(tensor, label);
         tensor.dispose();
       }
     });
+
     console.log('Local model loaded');
   } catch (e) {
-    console.error('Error loading model', e);
+    console.error('loadModel error', e);
   }
 }
 
 async function loadPretrainedGestures() {
-  const paths = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
+  const tried = ['./gestos_entrenados.json', './libs/gestos_entrenados.json'];
   let data = null;
-  for (const path of paths) {
+
+  for (const path of tried) {
     try {
-      const resp = await fetch(path);
+      const resp = await fetch(path, { cache: 'no-cache' });
       if (!resp.ok) continue;
       data = await resp.json();
       console.log('Pretrained gestures loaded from', path);
       break;
-    } catch {}
+    } catch (e) {
+      continue;
+    }
   }
-  if (!data) return;
 
-  data.forEach(item => {
-    if (!item.nombre || !item.features || item.features.length !== 63) return;
-    const tensor = tf.tensor2d([item.features]);
-    classifier.addExample(tensor, item.nombre);
-    tensor.dispose();
+  if (!data) {
+    console.warn('No se encontró gestos_entrenados.json');
+    return;
+  }
+
+  const buckets = {};
+  for (const item of data) {
+    if (!item || !item.nombre || !item.features) continue;
+    if (!Array.isArray(item.features) || item.features.length !== 63) continue;
+    if (!buckets[item.nombre]) buckets[item.nombre] = [];
+    buckets[item.nombre].push(item.features);
+  }
+
+  Object.keys(buckets).forEach(label => {
+    buckets[label].forEach(features => {
+      const tensor = tf.tensor2d([features]);
+      classifier.addExample(tensor, label);
+      tensor.dispose();
+    });
+    console.log(`Added ${buckets[label].length} examples for '${label}'`);
   });
-  console.log('Pretrained gestures loaded');
 }
